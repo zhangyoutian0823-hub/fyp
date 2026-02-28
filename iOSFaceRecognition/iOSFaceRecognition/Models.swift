@@ -5,6 +5,11 @@
 //  Created by mac on 2026/2/24.
 //
 
+//
+//  Models.swift
+//  iOSFaceRecognition
+//
+
 import Foundation
 
 struct AppUser: Identifiable, Codable, Equatable {
@@ -12,11 +17,5 @@ struct AppUser: Identifiable, Codable, Equatable {
     let userId: String
     var name: String
     var password: String
-    var faceImageFilename: String? // 注册的人脸照片文件名（保存到 Documents）
+    var faceImageFilename: String?
 }
-
-struct AdminAccount {
-    static let adminId = "admin"
-    static let password = "admin123"
-}
-

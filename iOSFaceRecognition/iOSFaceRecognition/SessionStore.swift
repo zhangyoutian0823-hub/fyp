@@ -5,6 +5,11 @@
 //  Created by mac on 2026/2/24.
 //
 
+//
+//  SessionStore.swift
+//  iOSFaceRecognition
+//
+
 import Foundation
 import Combine
 
@@ -21,8 +26,8 @@ final class SessionStore: ObservableObject {
         isAdmin = false
     }
 
-    func loginAdmin() {
-        currentUserId = nil
+    func loginAdmin(adminId: String) {
+        currentUserId = adminId
         isAdmin = true
     }
 
@@ -31,5 +36,4 @@ final class SessionStore: ObservableObject {
         isAdmin = false
     }
 }
-
 

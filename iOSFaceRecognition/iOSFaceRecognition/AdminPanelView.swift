@@ -5,11 +5,17 @@
 //  Created by mac on 2026/2/24.
 //
 
+//
+//  AdminPanelView.swift
+//  iOSFaceRecognition
+//
+
 import SwiftUI
 
 struct AdminPanelView: View {
     @EnvironmentObject var session: SessionStore
     @EnvironmentObject var userStore: UserStore
+    @EnvironmentObject var adminStore: AdminStore
 
     @State private var keyword = ""
 
@@ -24,11 +30,26 @@ struct AdminPanelView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
+                // Current admin info
+                if let adminId = session.currentUserId,
+                   let admin = adminStore.findAdmin(adminId: adminId) {
+                    HStack {
+                        Image(systemName: "person.badge.shield.checkmark")
+                            .foregroundStyle(.blue)
+                        Text("Logged in as: \(admin.name)  (\(admin.adminId))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                }
+
                 HStack {
                     TextField("Search userId / name", text: $keyword)
                         .textFieldStyle(.roundedBorder)
                     Button("Clear") { keyword = "" }
                 }
+                .padding(.horizontal)
 
                 List {
                     ForEach(filtered) { u in
@@ -97,4 +118,3 @@ struct AdminUserDetailView: View {
         .padding()
     }
 }
-

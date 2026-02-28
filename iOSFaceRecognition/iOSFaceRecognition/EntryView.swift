@@ -5,6 +5,11 @@
 //  Created by mac on 2026/2/24.
 //
 
+//
+//  EntryView.swift
+//  iOSFaceRecognition
+//
+
 import SwiftUI
 
 struct EntryView: View {
@@ -20,7 +25,7 @@ struct EntryView: View {
                 NavigationLink("Login") { LoginView() }
                     .buttonStyle(.bordered)
 
-                NavigationLink("Admin") { AdminLoginView() }
+                NavigationLink("Admin") { AdminEntryView() }
                     .buttonStyle(.bordered)
 
                 Spacer()
