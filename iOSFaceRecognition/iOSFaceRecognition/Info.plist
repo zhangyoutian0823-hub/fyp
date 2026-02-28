@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the front camera to detect and recognize your face for secure authentication.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID is used as a fallback authentication method for secure access.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

@@ -3,39 +3,19 @@
 //  iOSFaceRecognition
 //
 
-//
-//  AdminStore.swift
-//  iOSFaceRecognition
-//
-
-//
-//  AdminStore.swift
-//  iOSFaceRecognition
-//
-
 import Foundation
 import UIKit
 import Combine
 
-struct AdminUser: Identifiable, Codable, Equatable {
-    var id: String { adminId }
-    let adminId: String
-    var name: String
-    var password: String
-    var faceImageFilename: String?
-}
-
+@MainActor
 final class AdminStore: ObservableObject {
     @Published private(set) var admins: [AdminUser] = []
-    private let key = "admins_db_v1"
+    private let key = "admins_db_v2"  // v2: new model without password
 
     init() { load() }
 
     func load() {
-        guard let data = UserDefaults.standard.data(forKey: key) else {
-            admins = []
-            return
-        }
+        guard let data = UserDefaults.standard.data(forKey: key) else { return }
         admins = (try? JSONDecoder().decode([AdminUser].self, from: data)) ?? []
     }
 
@@ -48,20 +28,41 @@ final class AdminStore: ObservableObject {
         admins.first(where: { $0.adminId == adminId })
     }
 
-    func register(name: String, adminId: String, password: String, faceImage: UIImage?) throws {
+    // MARK: - Register Admin (multi-frame embedding)
+
+    func register(name: String, adminId: String, faceImages: [UIImage]) async throws {
         if findAdmin(adminId: adminId) != nil {
-            throw NSError(domain: "AdminRegister", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Admin ID 已存在"])
+            throw RegistrationError.userIdExists
         }
-        var newAdmin = AdminUser(adminId: adminId, name: name, password: password, faceImageFilename: nil)
-        if let faceImage = faceImage {
-            let filename = "admin_face_\(adminId)_\(UUID().uuidString).jpg"
-            try saveImage(faceImage, filename: filename)
-            newAdmin.faceImageFilename = filename
+        guard !faceImages.isEmpty else { throw RegistrationError.noFaceImage }
+
+        let service = FaceEmbeddingService.shared
+        var embeddings: [[Float]] = []
+        for img in faceImages {
+            if let emb = await service.extractEmbedding(from: img) {
+                embeddings.append(emb)
+            }
         }
-        admins.append(newAdmin)
+        guard !embeddings.isEmpty else { throw RegistrationError.faceNotDetected }
+
+        let avgEmbedding = service.averageEmbedding(embeddings)
+        var filename: String? = nil
+        if let first = faceImages.first {
+            filename = "admin_face_\(adminId)_\(UUID().uuidString).jpg"
+            try saveImage(first, filename: filename!)
+        }
+
+        let admin = AdminUser(
+            adminId: adminId,
+            name: name,
+            faceImageFilename: filename,
+            faceEmbedding: avgEmbedding
+        )
+        admins.append(admin)
         persist()
     }
+
+    // MARK: - Image Storage
 
     private func docsURL() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -70,8 +71,7 @@ final class AdminStore: ObservableObject {
     private func saveImage(_ image: UIImage, filename: String) throws {
         let url = docsURL().appendingPathComponent(filename)
         guard let data = image.jpegData(compressionQuality: 0.9) else {
-            throw NSError(domain: "Image", code: 0,
-                          userInfo: [NSLocalizedDescriptionKey: "图片编码失败"])
+            throw RegistrationError.imageSaveFailed
         }
         try data.write(to: url, options: [.atomic])
     }

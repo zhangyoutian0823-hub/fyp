@@ -2,21 +2,16 @@
 //  iOSFaceRecognitionApp.swift
 //  iOSFaceRecognition
 //
-//  Created by mac on 2026/2/24.
-//
-
-//
-//  iOSFaceRecognitionApp.swift
-//  iOSFaceRecognition
-//
 
 import SwiftUI
+import SwiftData
 
 @main
 struct iOSFaceRecognitionApp: App {
-    @StateObject private var session = SessionStore()
+    @StateObject private var session   = SessionStore()
     @StateObject private var userStore = UserStore()
     @StateObject private var adminStore = AdminStore()
+    @StateObject private var logStore  = LogStore()
 
     var body: some Scene {
         WindowGroup {
@@ -24,7 +19,7 @@ struct iOSFaceRecognitionApp: App {
                 .environmentObject(session)
                 .environmentObject(userStore)
                 .environmentObject(adminStore)
+                .environmentObject(logStore)
         }
     }
 }
-

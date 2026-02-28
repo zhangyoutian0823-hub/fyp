@@ -2,8 +2,6 @@
 //  WelcomeView.swift
 //  iOSFaceRecognition
 //
-//  Created by mac on 2026/2/24.
-//
 
 import SwiftUI
 
@@ -13,39 +11,57 @@ struct WelcomeView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                Text("Welcome").font(.title2).bold()
-
+            VStack(spacing: 16) {
                 if let uid = session.currentUserId,
                    let user = userStore.findUser(userId: uid) {
-                    Text("Name: \(user.name)")
-                    Text("User ID: \(user.userId)").foregroundStyle(.secondary)
 
+                    // 用户头像
                     if let fn = user.faceImageFilename,
                        let img = userStore.loadImage(filename: fn) {
                         Image(uiImage: img)
                             .resizable()
-                            .scaledToFit()
-                            .frame(height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .scaledToFill()
+                            .frame(width: 100, height: 100)
+                            .clipShape(Circle())
+                            .shadow(radius: 4)
+                    } else {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 80))
+                            .foregroundStyle(.secondary)
                     }
 
-                    NavigationLink("Update Face") { UpdateFaceView() }
-                        .buttonStyle(.borderedProminent)
+                    Text(user.name)
+                        .font(.title2.bold())
+                    Text("ID: \(user.userId)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(user.role.rawValue)
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(user.role == .vip ? Color.yellow.opacity(0.3) : Color.gray.opacity(0.15))
+                        .clipShape(Capsule())
 
-                    NavigationLink("Update Password") { UpdatePasswordView() }
-                        .buttonStyle(.bordered)
+                    Divider().padding(.horizontal, 40)
+
+                    NavigationLink(destination: UpdateFaceView()) {
+                        Label("Update Face", systemImage: "faceid")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.horizontal)
 
                     Button(role: .destructive) {
                         session.logout()
                     } label: {
-                        Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
+                        Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
+                    .padding(.horizontal)
 
                 } else {
-                    Text("No user").foregroundStyle(.secondary)
+                    Text("No user session").foregroundStyle(.secondary)
                     Button("Back") { session.logout() }
                 }
 
@@ -56,4 +72,3 @@ struct WelcomeView: View {
         }
     }
 }
-

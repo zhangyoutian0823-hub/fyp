@@ -2,76 +2,110 @@
 //  UserStore.swift
 //  iOSFaceRecognition
 //
-//  Created by mac on 2026/2/24.
-//
 
 import Foundation
 import Combine
 import UIKit
 
-
 @MainActor
 final class UserStore: ObservableObject {
     @Published private(set) var users: [AppUser] = []
-    private let key = "users_db_v1"
+    private let key = "users_db_v2"   // v2: new model without password
 
     init() { load() }
 
-    func load() {
-        guard let data = UserDefaults.standard.data(forKey: key) else {
-            users = []
-            return
-        }
-        users = (try? JSONDecoder().decode([AppUser].self, from: data)) ?? []
-    }
+    // MARK: - Query
 
-    private func persist() {
-        let data = (try? JSONEncoder().encode(users)) ?? Data()
-        UserDefaults.standard.set(data, forKey: key)
+    func load() {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return }
+        users = (try? JSONDecoder().decode([AppUser].self, from: data)) ?? []
     }
 
     func findUser(userId: String) -> AppUser? {
         users.first(where: { $0.userId == userId })
     }
 
-    func register(name: String, userId: String, password: String, faceImage: UIImage?) throws {
+    // MARK: - Register (multi-frame embedding)
+
+    /// Register a new user.
+    /// - Parameters:
+    ///   - name: Display name
+    ///   - userId: Unique user ID
+    ///   - faceImages: Multiple face capture images (recommend 3 frames)
+    func register(name: String,
+                  userId: String,
+                  faceImages: [UIImage],
+                  role: UserRole = .standard) async throws {
         if findUser(userId: userId) != nil {
-            throw NSError(domain: "Register", code: 1, userInfo: [NSLocalizedDescriptionKey: "User ID 已存在"])
+            throw RegistrationError.userIdExists
+        }
+        guard !faceImages.isEmpty else {
+            throw RegistrationError.noFaceImage
         }
 
-        var newUser = AppUser(userId: userId, name: name, password: password, faceImageFilename: nil)
-
-        if let faceImage {
-            let filename = "face_\(userId)_\(UUID().uuidString).jpg"
-            try saveImage(faceImage, filename: filename)
-            newUser.faceImageFilename = filename
+        // Extract embedding from each frame
+        let service = FaceEmbeddingService.shared
+        var embeddings: [[Float]] = []
+        for img in faceImages {
+            if let emb = await service.extractEmbedding(from: img) {
+                embeddings.append(emb)
+            }
+        }
+        guard !embeddings.isEmpty else {
+            throw RegistrationError.faceNotDetected
         }
 
-        users.append(newUser)
+        // Average multi-frame embeddings for better accuracy
+        let avgEmbedding = service.averageEmbedding(embeddings)
+
+        // Save face image (first frame as display thumbnail)
+        var filename: String? = nil
+        if let firstImg = faceImages.first {
+            filename = "face_\(userId)_\(UUID().uuidString).jpg"
+            try saveImage(firstImg, filename: filename!)
+        }
+
+        let user = AppUser(
+            userId: userId,
+            name: name,
+            faceImageFilename: filename,
+            faceEmbedding: avgEmbedding,
+            role: role
+        )
+        users.append(user)
         persist()
     }
 
-    func updatePassword(userId: String, newPassword: String) throws {
-        guard let idx = users.firstIndex(where: { $0.userId == userId }) else {
-            throw NSError(domain: "UpdatePassword", code: 1, userInfo: [NSLocalizedDescriptionKey: "用户不存在"])
-        }
-        users[idx].password = newPassword
-        persist()
-    }
+    // MARK: - Update Face
 
-    func updateFace(userId: String, faceImage: UIImage) throws {
+    func updateFace(userId: String, faceImages: [UIImage]) async throws {
         guard let idx = users.firstIndex(where: { $0.userId == userId }) else {
-            throw NSError(domain: "UpdateFace", code: 1, userInfo: [NSLocalizedDescriptionKey: "用户不存在"])
+            throw RegistrationError.userNotFound
         }
-        // 删除旧图（可选）
-        if let old = users[idx].faceImageFilename {
-            deleteImage(filename: old)
+        guard !faceImages.isEmpty else { throw RegistrationError.noFaceImage }
+
+        // Remove old image
+        if let old = users[idx].faceImageFilename { deleteImage(filename: old) }
+
+        let service = FaceEmbeddingService.shared
+        var embeddings: [[Float]] = []
+        for img in faceImages {
+            if let emb = await service.extractEmbedding(from: img) {
+                embeddings.append(emb)
+            }
         }
+        guard !embeddings.isEmpty else { throw RegistrationError.faceNotDetected }
+
+        let avgEmbedding = service.averageEmbedding(embeddings)
         let filename = "face_\(userId)_\(UUID().uuidString).jpg"
-        try saveImage(faceImage, filename: filename)
+        try saveImage(faceImages[0], filename: filename)
+
+        users[idx].faceEmbedding = avgEmbedding
         users[idx].faceImageFilename = filename
         persist()
     }
+
+    // MARK: - Delete User
 
     func deleteUser(userId: String) {
         if let u = findUser(userId: userId), let fn = u.faceImageFilename {
@@ -90,7 +124,7 @@ final class UserStore: ObservableObject {
     private func saveImage(_ image: UIImage, filename: String) throws {
         let url = docsURL().appendingPathComponent(filename)
         guard let data = image.jpegData(compressionQuality: 0.9) else {
-            throw NSError(domain: "Image", code: 0, userInfo: [NSLocalizedDescriptionKey: "图片编码失败"])
+            throw RegistrationError.imageSaveFailed
         }
         try data.write(to: url, options: [.atomic])
     }
@@ -105,5 +139,31 @@ final class UserStore: ObservableObject {
         let url = docsURL().appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: url)
     }
+
+    // MARK: - Persistence
+
+    private func persist() {
+        let data = (try? JSONEncoder().encode(users)) ?? Data()
+        UserDefaults.standard.set(data, forKey: key)
+    }
 }
 
+// MARK: - Error Types
+
+enum RegistrationError: LocalizedError {
+    case userIdExists
+    case noFaceImage
+    case faceNotDetected
+    case userNotFound
+    case imageSaveFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .userIdExists:     return "User ID already exists."
+        case .noFaceImage:      return "No face image provided."
+        case .faceNotDetected:  return "No face detected in the image. Please retake."
+        case .userNotFound:     return "User not found."
+        case .imageSaveFailed:  return "Failed to save image."
+        }
+    }
+}

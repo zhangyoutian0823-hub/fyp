@@ -2,7 +2,7 @@
 //  UpdateFaceView.swift
 //  iOSFaceRecognition
 //
-//  Created by mac on 2026/2/24.
+//  更新用户人脸（多帧采集，重新提取 embedding）。
 //
 
 import SwiftUI
@@ -14,66 +14,83 @@ struct UpdateFaceView: View {
 
     @StateObject private var camera = CameraService()
 
+    @State private var capturedImages: [UIImage] = []
     @State private var errorMsg: String?
+    @State private var isProcessing = false
+
+    private let requiredFrames = 3
+
+    var canCapture: Bool { camera.faceDetected && capturedImages.count < requiredFrames && !isProcessing }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Text("Update Face")
                 .font(.title3).bold()
 
-            CameraView(service: camera)
-                .frame(height: 340)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+            ZStack(alignment: .topLeading) {
+                CameraView(service: camera)
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            Text(camera.faceDetected ? "✅ Face Detected" : "⬜ No Face")
-                .foregroundStyle(camera.faceDetected ? .green : .secondary)
+                FaceOverlayView(observations: camera.faceObservations)
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            if let camErr = camera.lastError {
-                Text(camErr).foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(
+                        camera.faceDetected ? "Face Detected" : "No Face",
+                        systemImage: camera.faceDetected ? "checkmark.circle.fill" : "circle"
+                    )
+                    .foregroundStyle(camera.faceDetected ? .green : .secondary)
+                    .padding(8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    Text("Captured: \(capturedImages.count) / \(requiredFrames)")
+                        .font(.caption.bold())
+                        .padding(6)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .padding(10)
             }
 
-            if let errorMsg {
-                Text(errorMsg).foregroundStyle(.red)
-            }
+            ProgressView(value: Double(capturedImages.count), total: Double(requiredFrames))
+                .tint(.green)
+
+            if let camErr = camera.lastError { Text(camErr).foregroundStyle(.orange).font(.caption) }
+            if let errorMsg { Text(errorMsg).foregroundStyle(.red).font(.caption) }
+            if isProcessing { ProgressView("Processing…") }
 
             HStack {
-                Button("Capture") {
+                Button {
                     errorMsg = nil
                     camera.capture()
+                } label: {
+                    Label("Capture Frame", systemImage: "camera.circle")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCapture)
 
                 Spacer()
 
-                if camera.lastPhoto != nil {
-                    Text("📸 Captured").foregroundStyle(.secondary)
+                if !capturedImages.isEmpty {
+                    Button(role: .destructive) {
+                        capturedImages = []
+                        camera.lastPhoto = nil
+                    } label: { Label("Reset", systemImage: "arrow.counterclockwise") }
+                    .buttonStyle(.bordered)
                 }
             }
 
-            Button("Confirm Update") {
-                errorMsg = nil
-
-                guard let uid = session.currentUserId else {
-                    errorMsg = "No logged-in user."
-                    return
-                }
-                guard camera.faceDetected else {
-                    errorMsg = "No face detected. Please face the camera."
-                    return
-                }
-                guard let img = camera.lastPhoto else {
-                    errorMsg = "Please tap Capture first."
-                    return
-                }
-
-                do {
-                    try userStore.updateFace(userId: uid, faceImage: img)
-                    dismiss()
-                } catch {
-                    errorMsg = error.localizedDescription
-                }
+            Button {
+                Task { await confirmUpdate() }
+            } label: {
+                Label("Confirm Update", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
+            .disabled(capturedImages.count < requiredFrames || isProcessing)
 
             Spacer()
         }
@@ -82,5 +99,28 @@ struct UpdateFaceView: View {
         .onDisappear { camera.stop() }
         .navigationTitle("Update Face")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: camera.lastPhoto) { _, newPhoto in
+            if let img = newPhoto, capturedImages.count < requiredFrames {
+                capturedImages.append(img)
+                camera.lastPhoto = nil
+            }
+        }
+    }
+
+    private func confirmUpdate() async {
+        errorMsg = nil
+        guard let uid = session.currentUserId else { errorMsg = "No session."; return }
+        guard capturedImages.count >= requiredFrames else {
+            errorMsg = "Please capture \(requiredFrames) frames."
+            return
+        }
+        isProcessing = true
+        defer { isProcessing = false }
+        do {
+            try await userStore.updateFace(userId: uid, faceImages: capturedImages)
+            dismiss()
+        } catch {
+            errorMsg = error.localizedDescription
+        }
     }
 }

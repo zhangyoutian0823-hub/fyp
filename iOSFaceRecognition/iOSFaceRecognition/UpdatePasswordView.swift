@@ -2,40 +2,27 @@
 //  UpdatePasswordView.swift
 //  iOSFaceRecognition
 //
-//  Created by mac on 2026/2/24.
+//  This feature is no longer needed in the pure face recognition system.
+//  Kept as an empty view for compatibility.
 //
 
 import SwiftUI
 
 struct UpdatePasswordView: View {
-    @EnvironmentObject var session: SessionStore
-    @EnvironmentObject var userStore: UserStore
     @Environment(\.dismiss) var dismiss
 
-    @State private var newPassword = ""
-    @State private var errorMsg: String?
-
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Update Password").font(.title3).bold()
-            SecureField("New Password", text: $newPassword).textFieldStyle(.roundedBorder)
-
-            if let errorMsg { Text(errorMsg).foregroundStyle(.red) }
-
-            Button("Save") {
-                guard let uid = session.currentUserId else { return }
-                do {
-                    try userStore.updatePassword(userId: uid, newPassword: newPassword)
-                    dismiss()
-                } catch {
-                    errorMsg = error.localizedDescription
-                }
-            }
-            .buttonStyle(.borderedProminent)
-
-            Spacer()
+        VStack(spacing: 16) {
+            Image(systemName: "lock.slash")
+                .font(.system(size: 60))
+                .foregroundStyle(.secondary)
+            Text("Password authentication has been replaced by face recognition.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+            Button("Back") { dismiss() }
+                .buttonStyle(.bordered)
         }
         .padding()
+        .navigationTitle("Password")
     }
 }
-

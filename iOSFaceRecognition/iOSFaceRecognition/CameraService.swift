@@ -2,8 +2,6 @@
 //  CameraService.swift
 //  iOSFaceRecognition
 //
-//  Created by mac on 2026/2/24.
-//
 
 import Foundation
 import Combine
@@ -14,10 +12,11 @@ import Vision
 @MainActor
 final class CameraService: NSObject, ObservableObject {
 
-    // MARK: - SwiftUI states
+    // MARK: - Published State
     @Published var isRunning: Bool = false
     @Published var lastPhoto: UIImage? = nil
     @Published var faceDetected: Bool = false
+    @Published var faceObservations: [VNFaceObservation] = []  // NEW: for overlay
     @Published var lastError: String? = nil
 
     // MARK: - AVFoundation
@@ -36,16 +35,12 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     // MARK: - Public
+
     func start() {
         configureIfNeeded()
-
-        guard !session.isRunning else {
-            isRunning = true
-            return
-        }
+        guard !session.isRunning else { isRunning = true; return }
         guard !isStarting else { return }
         isStarting = true
-
         queue.async { [weak self] in
             guard let self else { return }
             self.session.startRunning()
@@ -57,22 +52,15 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     func stop() {
-        guard session.isRunning else {
-            isRunning = false
-            return
-        }
-
+        guard session.isRunning else { isRunning = false; return }
         queue.async { [weak self] in
             guard let self else { return }
             self.session.stopRunning()
-            DispatchQueue.main.async {
-                self.isRunning = false
-            }
+            DispatchQueue.main.async { self.isRunning = false }
         }
     }
 
     func capture() {
-        // session 没跑就先跑，再延迟拍照，避免 “No active video connection”
         if !session.isRunning {
             start()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
@@ -84,36 +72,33 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     // MARK: - Private capture
+
     private func _captureNow() {
-        // 检查是否有可用 video connection
         guard let conn = photoOutput.connection(with: .video), conn.isEnabled else {
-            // 再等一下重试（模拟器/刚启动时常见）
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 guard let self else { return }
                 guard let conn2 = self.photoOutput.connection(with: .video), conn2.isEnabled else {
-                    self.lastError = "Camera not ready (no active video connection). Try again."
+                    self.lastError = "Camera not ready. Try again."
                     return
                 }
-                let settings = AVCapturePhotoSettings()
-                self.photoOutput.capturePhoto(with: settings, delegate: self)
+                self.photoOutput.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
             }
             return
         }
-
-        let settings = AVCapturePhotoSettings()
-        photoOutput.capturePhoto(with: settings, delegate: self)
+        photoOutput.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
     }
 
     // MARK: - Configure
+
     private func configureIfNeeded() {
         guard !isConfigured else { return }
         isConfigured = true
-
         session.beginConfiguration()
         session.sessionPreset = .photo
 
-        // 1) Front camera input
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) else {
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                   for: .video,
+                                                   position: .front) else {
             session.commitConfiguration()
             lastError = "Front camera not available."
             return
@@ -129,39 +114,28 @@ final class CameraService: NSObject, ObservableObject {
             session.addInput(input)
         } catch {
             session.commitConfiguration()
-            lastError = "Failed to create camera input: \(error.localizedDescription)"
+            lastError = "Camera input error: \(error.localizedDescription)"
             return
         }
 
-        // 2) Photo output
-        if session.canAddOutput(photoOutput) {
-            session.addOutput(photoOutput)
-        } else {
-            lastError = "Cannot add photo output."
-        }
+        if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
 
-        // 3) Video output (for face detection)
-        videoOutput.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-        ]
+        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true
         videoOutput.setSampleBufferDelegate(self, queue: queue)
-
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-        } else {
-            lastError = "Cannot add video output."
-        }
+        if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
 
         session.commitConfiguration()
     }
 
-    // MARK: - Vision
-    private func detectFace(in pixelBuffer: CVPixelBuffer) {
-        let request = VNDetectFaceRectanglesRequest { [weak self] req, _ in
-            let hasFace = (req.results as? [VNFaceObservation])?.isEmpty == false
+    // MARK: - Vision face detection (runs on camera.queue, updates main)
+
+    nonisolated private func detectFace(in pixelBuffer: CVPixelBuffer) {
+        let request = VNDetectFaceLandmarksRequest { [weak self] req, _ in
+            let results = (req.results as? [VNFaceObservation]) ?? []
             DispatchQueue.main.async {
-                self?.faceDetected = hasFace
+                self?.faceObservations = results
+                self?.faceDetected = !results.isEmpty
             }
         }
 
@@ -170,44 +144,33 @@ final class CameraService: NSObject, ObservableObject {
             orientation: .leftMirrored,
             options: [:]
         )
-
-        do {
-            try handler.perform([request])
-        } catch {
-            DispatchQueue.main.async { [weak self] in
-                self?.lastError = error.localizedDescription
-            }
-        }
+        try? handler.perform([request])
     }
 }
 
 // MARK: - Video frames
+
 extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput,
-                       didOutput sampleBuffer: CMSampleBuffer,
-                       from connection: AVCaptureConnection) {
+    nonisolated func captureOutput(_ output: AVCaptureOutput,
+                                   didOutput sampleBuffer: CMSampleBuffer,
+                                   from connection: AVCaptureConnection) {
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         detectFace(in: pb)
     }
 }
 
-// MARK: - Photo capture delegate
+// MARK: - Photo capture
+
 extension CameraService: AVCapturePhotoCaptureDelegate {
-    func photoOutput(_ output: AVCapturePhotoOutput,
-                     didFinishProcessingPhoto photo: AVCapturePhoto,
-                     error: Error?) {
+    nonisolated func photoOutput(_ output: AVCapturePhotoOutput,
+                                 didFinishProcessingPhoto photo: AVCapturePhoto,
+                                 error: Error?) {
         if let error {
-            DispatchQueue.main.async { [weak self] in
-                self?.lastError = error.localizedDescription
-            }
+            DispatchQueue.main.async { [weak self] in self?.lastError = error.localizedDescription }
             return
         }
-
         guard let data = photo.fileDataRepresentation(),
               let img = UIImage(data: data) else { return }
-
-        DispatchQueue.main.async { [weak self] in
-            self?.lastPhoto = img
-        }
+        DispatchQueue.main.async { [weak self] in self?.lastPhoto = img }
     }
 }
