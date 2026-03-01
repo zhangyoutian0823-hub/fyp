@@ -10,27 +10,34 @@ import Foundation
 // MARK: - 认证事件类型
 
 enum AccessEventType: String, Codable, CaseIterable {
-    case loginSuccess      = "Login Success"
-    case loginFailed       = "Login Failed"
-    case faceMatchFailed   = "Face Match Failed"
-    case userNotFound      = "User Not Found"
-    case noFaceDetected    = "No Face Detected"
-    case adminLoginSuccess = "Admin Login Success"
-    case adminLoginFailed  = "Admin Login Failed"
+    case loginSuccess         = "Login Success"
+    case loginFailed          = "Login Failed"
+    case faceMatchFailed      = "Face Match Failed"
+    case userNotFound         = "User Not Found"
+    case noFaceDetected       = "No Face Detected"
+    case adminLoginSuccess    = "Admin Login Success"
+    case adminLoginFailed     = "Admin Login Failed"
+    case passwordLoginSuccess = "Password Login Success"   // 密码方式登录成功
+    case passwordLoginFailed  = "Password Login Failed"    // 密码方式登录失败
 
     var icon: String {
         switch self {
-        case .loginSuccess, .adminLoginSuccess: return "checkmark.circle.fill"
-        case .loginFailed, .adminLoginFailed:   return "xmark.circle.fill"
-        case .faceMatchFailed:                  return "face.smiling.inverse"
-        case .userNotFound:                     return "person.slash"
-        case .noFaceDetected:                   return "eye.slash"
+        case .loginSuccess, .adminLoginSuccess, .passwordLoginSuccess:
+            return "checkmark.circle.fill"
+        case .loginFailed, .adminLoginFailed, .passwordLoginFailed:
+            return "xmark.circle.fill"
+        case .faceMatchFailed:
+            return "face.smiling.inverse"
+        case .userNotFound:
+            return "person.slash"
+        case .noFaceDetected:
+            return "eye.slash"
         }
     }
 
     var isSuccess: Bool {
         switch self {
-        case .loginSuccess, .adminLoginSuccess: return true
+        case .loginSuccess, .adminLoginSuccess, .passwordLoginSuccess: return true
         default: return false
         }
     }

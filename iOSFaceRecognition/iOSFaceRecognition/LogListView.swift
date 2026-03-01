@@ -2,7 +2,7 @@
 //  LogListView.swift
 //  iOSFaceRecognition
 //
-//  管理员访问日志查看界面，按时间倒序显示所有认证事件。
+//  Access log list — color-coded rows by event type, CSV export.
 //
 
 import SwiftUI
@@ -27,13 +27,26 @@ struct LogListView: View {
                     systemImage: "doc.text.magnifyingglass",
                     description: Text("Authentication events will appear here.")
                 )
+                .background(Color(uiColor: .systemGroupedBackground))
             } else {
-                List {
-                    ForEach(logStore.logs) { log in
-                        LogRowView(log: log, dateFormatter: dateFormatter)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        AppCard {
+                            ForEach(Array(logStore.logs.enumerated()), id: \.element.id) { idx, log in
+                                VStack(spacing: 0) {
+                                    LogRowView(log: log, dateFormatter: dateFormatter)
+                                    if idx < logStore.logs.count - 1 {
+                                        Divider().padding(.leading, 60)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 32)
                     }
                 }
-                .listStyle(.plain)
+                .background(Color(uiColor: .systemGroupedBackground))
             }
         }
         .navigationTitle("Access Logs (\(logStore.logs.count))")
@@ -47,7 +60,6 @@ struct LogListView: View {
                 }
                 .disabled(logStore.logs.isEmpty)
             }
-
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     csvText = logStore.exportCSV()
@@ -78,36 +90,49 @@ private struct LogRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: log.eventType.icon)
-                .foregroundStyle(log.eventType.isSuccess ? .green : .red)
-                .font(.title3)
-                .frame(width: 28)
+            // Colored icon circle
+            ZStack {
+                Circle()
+                    .fill(log.eventType.isSuccess
+                          ? Color.green.opacity(0.15)
+                          : Color.red.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: log.eventType.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(log.eventType.isSuccess ? .green : .red)
+            }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(log.userId)
                         .font(.subheadline.bold())
+                        .foregroundStyle(.primary)
                     Spacer()
                     Text(dateFormatter.string(from: log.timestamp))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
                 HStack {
                     Text(log.eventType.rawValue)
                         .font(.caption)
                         .foregroundStyle(log.eventType.isSuccess ? .green : .secondary)
-
                     if let score = log.similarityScore {
                         Spacer()
                         Text(String(format: "%.1f%%", score * 100))
                             .font(.caption.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(score >= FaceMatchService.shared.threshold
+                                        ? Color.green.opacity(0.12)
+                                        : Color.red.opacity(0.12))
                             .foregroundStyle(score >= FaceMatchService.shared.threshold ? .green : .red)
+                            .clipShape(Capsule())
                     }
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 

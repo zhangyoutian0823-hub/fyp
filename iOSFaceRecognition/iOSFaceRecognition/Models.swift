@@ -13,7 +13,6 @@ enum UserRole: String, Codable, CaseIterable {
 }
 
 // MARK: - 普通用户模型
-// 纯人脸识别方案：去掉 password，增加 faceEmbedding、role、createdAt
 
 struct AppUser: Identifiable, Codable, Equatable {
     var id: String { userId }
@@ -23,6 +22,8 @@ struct AppUser: Identifiable, Codable, Equatable {
     var faceImageFilename: String?
     /// 128 维 L2 归一化特征向量（核心识别依据）
     var faceEmbedding: [Float]?
+    /// SHA-256 哈希后的密码（可选，兼容旧账户；注册时必填）
+    var passwordHash: String?
     /// 用户角色
     var role: UserRole
     /// 注册时间
@@ -32,19 +33,20 @@ struct AppUser: Identifiable, Codable, Equatable {
          name: String,
          faceImageFilename: String? = nil,
          faceEmbedding: [Float]? = nil,
+         passwordHash: String? = nil,
          role: UserRole = .standard,
          createdAt: Date = Date()) {
         self.userId = userId
         self.name = name
         self.faceImageFilename = faceImageFilename
         self.faceEmbedding = faceEmbedding
+        self.passwordHash = passwordHash
         self.role = role
         self.createdAt = createdAt
     }
 }
 
 // MARK: - 管理员模型
-// 同样采用纯人脸识别，去掉 password
 
 struct AdminUser: Identifiable, Codable, Equatable {
     var id: String { adminId }
@@ -52,17 +54,21 @@ struct AdminUser: Identifiable, Codable, Equatable {
     var name: String
     var faceImageFilename: String?
     var faceEmbedding: [Float]?
+    /// SHA-256 哈希后的密码（注册时必填）
+    var passwordHash: String?
     var createdAt: Date
 
     init(adminId: String,
          name: String,
          faceImageFilename: String? = nil,
          faceEmbedding: [Float]? = nil,
+         passwordHash: String? = nil,
          createdAt: Date = Date()) {
         self.adminId = adminId
         self.name = name
         self.faceImageFilename = faceImageFilename
         self.faceEmbedding = faceEmbedding
+        self.passwordHash = passwordHash
         self.createdAt = createdAt
     }
 }

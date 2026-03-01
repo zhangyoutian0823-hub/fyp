@@ -6,6 +6,7 @@
 import Foundation
 import Combine
 import UIKit
+import CryptoKit
 
 @MainActor
 final class UserStore: ObservableObject {
@@ -25,19 +26,39 @@ final class UserStore: ObservableObject {
         users.first(where: { $0.userId == userId })
     }
 
-    // MARK: - Register (multi-frame embedding)
+    // MARK: - Password Hashing
+
+    /// SHA-256 哈希密码（不可逆，不明文存储）
+    func hashPassword(_ raw: String) -> String {
+        let digest = SHA256.hash(data: Data(raw.utf8))
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 验证密码是否匹配
+    func verifyPassword(userId: String, password: String) -> Bool {
+        guard let user = findUser(userId: userId),
+              let storedHash = user.passwordHash else { return false }
+        return hashPassword(password) == storedHash
+    }
+
+    // MARK: - Register (multi-frame embedding + password)
 
     /// Register a new user.
     /// - Parameters:
     ///   - name: Display name
     ///   - userId: Unique user ID
+    ///   - password: Plain-text password (will be SHA-256 hashed before storage)
     ///   - faceImages: Multiple face capture images (recommend 3 frames)
     func register(name: String,
                   userId: String,
+                  password: String,
                   faceImages: [UIImage],
                   role: UserRole = .standard) async throws {
         if findUser(userId: userId) != nil {
             throw RegistrationError.userIdExists
+        }
+        guard password.count >= 6 else {
+            throw RegistrationError.weakPassword
         }
         guard !faceImages.isEmpty else {
             throw RegistrationError.noFaceImage
@@ -70,9 +91,19 @@ final class UserStore: ObservableObject {
             name: name,
             faceImageFilename: filename,
             faceEmbedding: avgEmbedding,
+            passwordHash: hashPassword(password),
             role: role
         )
         users.append(user)
+        persist()
+    }
+
+    // MARK: - Update Password
+
+    /// 更新用户密码哈希值（由 UpdatePasswordView 调用，已验证旧密码后才调用此方法）
+    func updatePasswordHash(userId: String, newHash: String) {
+        guard let idx = users.firstIndex(where: { $0.userId == userId }) else { return }
+        users[idx].passwordHash = newHash
         persist()
     }
 
@@ -156,14 +187,20 @@ enum RegistrationError: LocalizedError {
     case faceNotDetected
     case userNotFound
     case imageSaveFailed
+    case weakPassword
+    case passwordMismatch
+    case invalidInviteCode
 
     var errorDescription: String? {
         switch self {
-        case .userIdExists:     return "User ID already exists."
-        case .noFaceImage:      return "No face image provided."
-        case .faceNotDetected:  return "No face detected in the image. Please retake."
-        case .userNotFound:     return "User not found."
-        case .imageSaveFailed:  return "Failed to save image."
+        case .userIdExists:      return "User ID already exists."
+        case .noFaceImage:       return "No face image provided."
+        case .faceNotDetected:   return "No face detected in the image. Please retake."
+        case .userNotFound:      return "User not found."
+        case .imageSaveFailed:   return "Failed to save image."
+        case .weakPassword:      return "Password must be at least 6 characters."
+        case .passwordMismatch:  return "Passwords do not match."
+        case .invalidInviteCode: return "Invalid or expired admin invite code."
         }
     }
 }
