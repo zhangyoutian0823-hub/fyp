@@ -136,6 +136,76 @@ final class UserStore: ObservableObject {
         persist()
     }
 
+    // MARK: - Lockout Management
+
+    private var maxFailedAttempts: Int { AppSettings.maxFailedAttempts }
+    private var lockDurationSeconds: TimeInterval { TimeInterval(AppSettings.lockoutMinutes * 60) }
+
+    /// 账号是否仍在锁定期内
+    func isLocked(userId: String) -> Bool {
+        guard let user = findUser(userId: userId),
+              let until = user.lockedUntil else { return false }
+        return Date() < until
+    }
+
+    /// 锁定剩余分钟数（向上取整）
+    func lockRemainingMinutes(userId: String) -> Int {
+        guard let user = findUser(userId: userId),
+              let until = user.lockedUntil,
+              Date() < until else { return 0 }
+        return max(1, Int(ceil(until.timeIntervalSinceNow / 60)))
+    }
+
+    /// 记录一次失败尝试，达到阈值后锁定账号
+    func recordFailedAttempt(userId: String) {
+        guard let idx = users.firstIndex(where: { $0.userId == userId }) else { return }
+        users[idx].failedAttempts += 1
+        if users[idx].failedAttempts >= maxFailedAttempts {
+            users[idx].lockedUntil = Date().addingTimeInterval(lockDurationSeconds)
+        }
+        persist()
+    }
+
+    /// 清除失败计数（登录成功后调用）
+    func clearFailedAttempts(userId: String) {
+        guard let idx = users.firstIndex(where: { $0.userId == userId }) else { return }
+        users[idx].failedAttempts = 0
+        users[idx].lockedUntil = nil
+        persist()
+    }
+
+    /// 管理员手动解锁账号
+    func unlockAccount(userId: String) {
+        clearFailedAttempts(userId: userId)
+    }
+
+    // MARK: - Account Active / Disable
+
+    /// 管理员启用或禁用账号
+    func setActive(userId: String, isActive: Bool) {
+        guard let idx = users.firstIndex(where: { $0.userId == userId }) else { return }
+        users[idx].isActive = isActive
+        persist()
+    }
+
+    // MARK: - Update Name
+
+    /// 用户修改自己的显示名称
+    func updateName(userId: String, newName: String) {
+        guard let idx = users.firstIndex(where: { $0.userId == userId }) else { return }
+        users[idx].name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        persist()
+    }
+
+    // MARK: - Update Role
+
+    /// 管理员修改用户角色
+    func updateRole(userId: String, newRole: UserRole) {
+        guard let idx = users.firstIndex(where: { $0.userId == userId }) else { return }
+        users[idx].role = newRole
+        persist()
+    }
+
     // MARK: - Delete User
 
     func deleteUser(userId: String) {

@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import UIKit
+
+private let adminHaptic = UINotificationFeedbackGenerator()
 
 struct AdminLoginView: View {
     @EnvironmentObject var adminStore: AdminStore
@@ -181,10 +184,12 @@ struct AdminLoginView: View {
         lastScore = score
         if score >= FaceMatchService.shared.threshold {
             logStore.add(userId: aid, eventType: .adminLoginSuccess, similarityScore: score)
+            adminHaptic.notificationOccurred(.success)
             session.loginAdmin(adminId: aid)
             dismiss()
         } else {
             logStore.add(userId: aid, eventType: .adminLoginFailed, similarityScore: score)
+            adminHaptic.notificationOccurred(.error)
             errorMsg = String(format: "Face not recognized (%.1f%% < %.0f%% required).",
                               score * 100, FaceMatchService.shared.threshold * 100)
         }

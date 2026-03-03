@@ -21,6 +21,10 @@ struct RegisterView: View {
     @State private var capturedImages: [UIImage] = []
     @State private var isProcessing = false
 
+    /// Triggers navigation to LoginView after successful registration.
+    @State private var registrationSucceeded = false
+    @State private var registeredUserId = ""
+
     private let requiredFrames = 3
 
     var passwordTooShort: Bool { !password.isEmpty && password.count < 6 }
@@ -248,6 +252,9 @@ struct RegisterView: View {
         .navigationBarTitleDisplayMode(.large)
         .onAppear { camera.start() }
         .onDisappear { camera.stop() }
+        .navigationDestination(isPresented: $registrationSucceeded) {
+            LoginView(prefillUserId: registeredUserId)
+        }
         .onChange(of: camera.lastPhoto) { _, newPhoto in
             if let img = newPhoto, capturedImages.count < requiredFrames {
                 capturedImages.append(img)
@@ -336,7 +343,9 @@ struct RegisterView: View {
         do {
             try await userStore.register(name: trimName, userId: trimId,
                                          password: password, faceImages: capturedImages)
-            dismiss()
+            // Navigate directly to the login screen with the new User ID pre-filled.
+            registeredUserId = trimId
+            registrationSucceeded = true
         } catch {
             errorMsg = error.localizedDescription
         }

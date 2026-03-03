@@ -16,9 +16,12 @@ final class FaceMatchService {
     static let shared = FaceMatchService()
     private init() {}
 
-    /// 默认匹配阈值。相似度 >= threshold 认为是同一人。
-    /// 范围 [0, 1]，推荐 0.72 ~ 0.80
-    var threshold: Float = 0.75
+    /// 匹配阈值 — 从 AppSettings 动态读取，管理员可在系统设置中调整。
+    /// 范围 [0, 1]，推荐 0.72 ~ 0.80，默认 0.75
+    var threshold: Float {
+        get { AppSettings.faceThreshold }
+        set { AppSettings.faceThreshold = newValue }
+    }
 
     // MARK: - 公开接口
 

@@ -10,6 +10,10 @@ import SwiftUI
 struct WelcomeView: View {
     @EnvironmentObject var session: SessionStore
     @EnvironmentObject var userStore: UserStore
+    @EnvironmentObject var logStore: LogStore
+
+    @State private var showEditName = false
+    @State private var editNameText = ""
 
     var body: some View {
         NavigationStack {
@@ -20,6 +24,19 @@ struct WelcomeView: View {
                         // ── Profile header card ──
                         profileHeader(user: user)
 
+                        // ── Last login info ──
+                        if let info = lastLoginInfo(userId: uid) {
+                            HStack(spacing: 6) {
+                                Image(systemName: info.icon)
+                                    .font(.caption2)
+                                Text("Last login: \(info.timeText) · \(info.method)")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 12)
+                            .padding(.bottom, 4)
+                        }
+
                         // ── Quick Actions ──
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Account")
@@ -27,7 +44,7 @@ struct WelcomeView: View {
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
                                 .padding(.horizontal, 20)
-                                .padding(.top, 28)
+                                .padding(.top, 20)
                                 .padding(.bottom, 4)
 
                             AppCard {
@@ -37,6 +54,10 @@ struct WelcomeView: View {
                                 Divider().padding(.leading, 56)
                                 NavigationLink(destination: UpdatePasswordView()) {
                                     actionRow(icon: "lock.rotation", color: .orange, title: "Change Password")
+                                }
+                                Divider().padding(.leading, 56)
+                                NavigationLink(destination: UserActivityView()) {
+                                    actionRow(icon: "clock.arrow.circlepath", color: .purple, title: "Login History")
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -73,6 +94,20 @@ struct WelcomeView: View {
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
                 .navigationBarHidden(true)
+                // ── Edit name alert ──
+                .alert("Edit Display Name", isPresented: $showEditName) {
+                    TextField("New name", text: $editNameText)
+                        .autocorrectionDisabled()
+                    Button("Save") {
+                        let trimmed = editNameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            userStore.updateName(userId: uid, newName: trimmed)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Enter a new display name for your account.")
+                }
 
             } else {
                 VStack(spacing: 16) {
@@ -123,8 +158,22 @@ struct WelcomeView: View {
         // White section below banner
         VStack(spacing: 6) {
             Spacer().frame(height: 50) // space for avatar offset
-            Text(user.name)
-                .font(.title3.bold())
+
+            // Name with edit pencil button
+            Button {
+                editNameText = user.name
+                showEditName = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text(user.name)
+                        .font(.title3.bold())
+                        .foregroundStyle(.primary)
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.blue.opacity(0.65))
+                }
+            }
+
             Text("ID: \(user.userId)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -142,10 +191,40 @@ struct WelcomeView: View {
                     user.role == .vip ? Color.orange : Color.blue
                 )
                 .clipShape(Capsule())
-                .padding(.bottom, 20)
+                .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity)
         .background(Color(uiColor: .systemGroupedBackground))
+    }
+
+    // MARK: - Last Login Info
+
+    private struct LastLoginInfo {
+        let icon: String
+        let timeText: String
+        let method: String
+    }
+
+    private func lastLoginInfo(userId: String) -> LastLoginInfo? {
+        let successEvents: Set<AccessEventType> = [.loginSuccess, .passwordLoginSuccess]
+        let userLogs = logStore.logs(for: userId).filter { successEvents.contains($0.eventType) }
+        // Need at least 2 successful logins (index 0 = current session, index 1 = previous)
+        guard userLogs.count >= 2 else { return nil }
+        let prev = userLogs[1]
+        let method = prev.eventType == .passwordLoginSuccess ? "Password" : "Face ID"
+        let icon   = prev.eventType == .passwordLoginSuccess ? "key.horizontal" : "faceid"
+        return LastLoginInfo(icon: icon, timeText: relativeTimeString(for: prev.timestamp), method: method)
+    }
+
+    private func relativeTimeString(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        } else if cal.isDateInYesterday(date) {
+            return "Yesterday \(date.formatted(date: .omitted, time: .shortened))"
+        } else {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
     }
 
     // MARK: - Action Row

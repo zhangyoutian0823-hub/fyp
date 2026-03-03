@@ -16,8 +16,12 @@ final class CameraService: NSObject, ObservableObject {
     @Published var isRunning: Bool = false
     @Published var lastPhoto: UIImage? = nil
     @Published var faceDetected: Bool = false
-    @Published var faceObservations: [VNFaceObservation] = []  // NEW: for overlay
+    @Published var faceObservations: [VNFaceObservation] = []
     @Published var lastError: String? = nil
+
+    /// Increments by 1 each time a blink is detected (open→closed→open transition).
+    /// Reset with `resetBlink()` between verification sessions.
+    @Published var blinkCount: Int = 0
 
     // MARK: - AVFoundation
     let session = AVCaptureSession()
@@ -28,6 +32,11 @@ final class CameraService: NSObject, ObservableObject {
 
     private var isConfigured = false
     private var isStarting = false
+
+    // MARK: - Blink detection state (only accessed from camera.queue)
+    // EAR threshold: eye height/width ratio below this = eyes closed
+    private let earClosedThreshold: Float = 0.22
+    nonisolated(unsafe) private var _eyeWasClosed: Bool = false
 
     override init() {
         super.init()
@@ -69,6 +78,12 @@ final class CameraService: NSObject, ObservableObject {
             return
         }
         _captureNow()
+    }
+
+    /// Resets the blink counter — call before starting a new liveness check.
+    func resetBlink() {
+        blinkCount = 0
+        _eyeWasClosed = false
     }
 
     // MARK: - Private capture
@@ -132,10 +147,15 @@ final class CameraService: NSObject, ObservableObject {
 
     nonisolated private func detectFace(in pixelBuffer: CVPixelBuffer) {
         let request = VNDetectFaceLandmarksRequest { [weak self] req, _ in
+            guard let self else { return }
             let results = (req.results as? [VNFaceObservation]) ?? []
             DispatchQueue.main.async {
-                self?.faceObservations = results
-                self?.faceDetected = !results.isEmpty
+                self.faceObservations = results
+                self.faceDetected = !results.isEmpty
+            }
+            // Blink detection from first face's landmarks
+            if let face = results.first, let landmarks = face.landmarks {
+                self.updateBlinkDetection(landmarks: landmarks)
             }
         }
 
@@ -145,6 +165,47 @@ final class CameraService: NSObject, ObservableObject {
             options: [:]
         )
         try? handler.perform([request])
+    }
+
+    // MARK: - Blink Detection (nonisolated — runs on camera.queue)
+
+    /// Calculates an Eye Aspect Ratio proxy: height / width of the eye bounding box.
+    /// A lower value indicates a more closed eye.
+    nonisolated private func eyeOpenness(_ region: VNFaceLandmarkRegion2D) -> Float {
+        let count = region.pointCount
+        guard count >= 4 else { return 1.0 }
+        var minX = Float.infinity, maxX = -Float.infinity
+        var minY = Float.infinity, maxY = -Float.infinity
+        for i in 0..<count {
+            let p = region.normalizedPoints[i]
+            // Explicit Float() cast handles both Float and CGFloat SDK variants
+            let px = Float(p.x), py = Float(p.y)
+            minX = min(minX, px); maxX = max(maxX, px)
+            minY = min(minY, py); maxY = max(maxY, py)
+        }
+        let w = maxX - minX
+        let h = maxY - minY
+        guard w > 0.001 else { return 1.0 }
+        return h / w
+    }
+
+    nonisolated private func updateBlinkDetection(landmarks: VNFaceLandmarks2D) {
+        guard let leftEye  = landmarks.leftEye,
+              let rightEye = landmarks.rightEye else { return }
+
+        let leftEAR  = eyeOpenness(leftEye)
+        let rightEAR = eyeOpenness(rightEye)
+        let avgEAR   = (leftEAR + rightEAR) / 2.0
+
+        let eyeClosed = avgEAR < earClosedThreshold
+
+        if _eyeWasClosed && !eyeClosed {
+            // Eyes just re-opened after being closed → complete blink
+            DispatchQueue.main.async { [weak self] in
+                self?.blinkCount += 1
+            }
+        }
+        _eyeWasClosed = eyeClosed
     }
 }
 

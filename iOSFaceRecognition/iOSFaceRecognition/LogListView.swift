@@ -2,13 +2,29 @@
 //  LogListView.swift
 //  iOSFaceRecognition
 //
-//  Access log list — color-coded rows by event type, CSV export.
+//  Access log list — color-coded rows, date & type filter, CSV export.
 //
 
 import SwiftUI
 
+// MARK: - Filter Enums
+
+private enum TimeFilter: String, CaseIterable {
+    case all   = "All"
+    case today = "Today"
+    case week  = "This Week"
+}
+
+private enum TypeFilter: String, CaseIterable {
+    case all     = "All"
+    case success = "Success"
+    case failed  = "Failed"
+}
+
 struct LogListView: View {
     @EnvironmentObject var logStore: LogStore
+    @State private var timeFilter: TimeFilter = .all
+    @State private var typeFilter: TypeFilter = .all
     @State private var showClearAlert = false
     @State private var showExportSheet = false
     @State private var csvText = ""
@@ -18,6 +34,36 @@ struct LogListView: View {
         f.dateFormat = "MM/dd HH:mm:ss"
         return f
     }()
+
+    // MARK: - Computed
+
+    private var filteredLogs: [AccessLog] {
+        let cal = Calendar.current
+        return logStore.logs.filter { log in
+            let timeOK: Bool = {
+                switch timeFilter {
+                case .all:   return true
+                case .today: return cal.isDateInToday(log.timestamp)
+                case .week:
+                    guard let weekAgo = cal.date(byAdding: .day, value: -7, to: Date())
+                    else { return true }
+                    return log.timestamp >= weekAgo
+                }
+            }()
+            let typeOK: Bool = {
+                switch typeFilter {
+                case .all:     return true
+                case .success: return log.eventType.isSuccess
+                case .failed:  return !log.eventType.isSuccess
+                }
+            }()
+            return timeOK && typeOK
+        }
+    }
+
+    private var isFiltered: Bool { timeFilter != .all || typeFilter != .all }
+    private var successCount: Int { filteredLogs.filter { $0.eventType.isSuccess }.count }
+    private var failedCount:  Int { filteredLogs.count - successCount }
 
     var body: some View {
         Group {
@@ -31,25 +77,47 @@ struct LogListView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        AppCard {
-                            ForEach(Array(logStore.logs.enumerated()), id: \.element.id) { idx, log in
-                                VStack(spacing: 0) {
-                                    LogRowView(log: log, dateFormatter: dateFormatter)
-                                    if idx < logStore.logs.count - 1 {
-                                        Divider().padding(.leading, 60)
+                        // ── Filter bar ──
+                        filterBar
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+
+                        // ── Summary chips ──
+                        summaryChips
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+
+                        // ── Log rows or empty state ──
+                        if filteredLogs.isEmpty {
+                            ContentUnavailableView(
+                                "No Matching Logs",
+                                systemImage: "line.3.horizontal.decrease.circle",
+                                description: Text("Try adjusting the filters above.")
+                            )
+                            .padding(.top, 40)
+                        } else {
+                            AppCard {
+                                ForEach(Array(filteredLogs.enumerated()), id: \.element.id) { idx, log in
+                                    VStack(spacing: 0) {
+                                        LogRowView(log: log, dateFormatter: dateFormatter)
+                                        if idx < filteredLogs.count - 1 {
+                                            Divider().padding(.leading, 60)
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 32)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 32)
                     }
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
             }
         }
-        .navigationTitle("Access Logs (\(logStore.logs.count))")
+        .navigationTitle(isFiltered
+            ? "Logs · \(filteredLogs.count)/\(logStore.logs.count)"
+            : "Access Logs (\(logStore.logs.count))")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -79,6 +147,107 @@ struct LogListView: View {
         .sheet(isPresented: $showExportSheet) {
             ShareSheet(text: csvText)
         }
+    }
+
+    // MARK: - Filter Bar
+
+    @ViewBuilder
+    private var filterBar: some View {
+        VStack(spacing: 8) {
+            // Time filter row
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                ForEach(TimeFilter.allCases, id: \.self) { f in
+                    filterChip(f.rawValue, selected: timeFilter == f, selectedColor: .blue) {
+                        withAnimation(.easeInOut(duration: 0.18)) { timeFilter = f }
+                    }
+                }
+                Spacer()
+            }
+
+            // Type filter row
+            HStack(spacing: 6) {
+                Image(systemName: "tag")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                ForEach(TypeFilter.allCases, id: \.self) { f in
+                    let color: Color = f == .success ? .green : (f == .failed ? .red : .blue)
+                    filterChip(f.rawValue, selected: typeFilter == f, selectedColor: color) {
+                        withAnimation(.easeInOut(duration: 0.18)) { typeFilter = f }
+                    }
+                }
+                Spacer()
+                if isFiltered {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            timeFilter = .all
+                            typeFilter = .all
+                        }
+                    } label: {
+                        Label("Reset", systemImage: "xmark.circle.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func filterChip(
+        _ title: String,
+        selected: Bool,
+        selectedColor: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.bold())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(selected
+                    ? selectedColor.opacity(0.15)
+                    : Color(uiColor: .tertiarySystemGroupedBackground))
+                .foregroundStyle(selected ? selectedColor : .secondary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(selected ? selectedColor.opacity(0.4) : Color.clear, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    // MARK: - Summary Chips
+
+    @ViewBuilder
+    private var summaryChips: some View {
+        HStack(spacing: 8) {
+            summaryPill(count: filteredLogs.count, label: "Total",   color: .blue)
+            summaryPill(count: successCount,       label: "Success", color: .green)
+            summaryPill(count: failedCount,        label: "Failed",  color: .red)
+            Spacer()
+        }
+    }
+
+    private func summaryPill(count: Int, label: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Text("\(count)")
+                .font(.caption.bold())
+                .foregroundStyle(color)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.10))
+        .clipShape(Capsule())
     }
 }
 
@@ -140,10 +309,8 @@ private struct LogRowView: View {
 
 private struct ShareSheet: UIViewControllerRepresentable {
     let text: String
-
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: [text], applicationActivities: nil)
     }
-
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import UIKit
+
+private let haptic = UINotificationFeedbackGenerator()
 
 private enum LoginMethod: String, CaseIterable {
     case face     = "Face Login"
@@ -18,6 +21,9 @@ struct LoginView: View {
     @EnvironmentObject var logStore: LogStore
     @Environment(\.dismiss) var dismiss
 
+    /// Optionally pre-fill the User ID (e.g. when navigating from RegisterView).
+    var prefillUserId: String = ""
+
     @StateObject private var camera = CameraService()
 
     @State private var userId: String = ""
@@ -26,6 +32,7 @@ struct LoginView: View {
     @State private var errorMsg: String?
     @State private var isProcessing = false
     @State private var lastScore: Float?
+    @State private var livenessVerified: Bool = false
 
     var body: some View {
         ScrollView {
@@ -117,10 +124,26 @@ struct LoginView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Sign In")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear { if loginMethod == .face { camera.start() } }
+        .onAppear {
+            if !prefillUserId.isEmpty { userId = prefillUserId }
+            if loginMethod == .face { camera.start(); camera.resetBlink() }
+        }
         .onDisappear { camera.stop() }
         .onChange(of: loginMethod) { _, newMethod in
-            if newMethod == .face { camera.start() } else { camera.stop() }
+            if newMethod == .face {
+                camera.start()
+                camera.resetBlink()
+                livenessVerified = false
+            } else {
+                camera.stop()
+            }
+        }
+        // Liveness: mark verified on first detected blink
+        .onChange(of: camera.blinkCount) { _, count in
+            if count >= 1 && !livenessVerified {
+                withAnimation { livenessVerified = true }
+                haptic.notificationOccurred(.success)
+            }
         }
     }
 
@@ -187,6 +210,26 @@ struct LoginView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // ── Liveness status bar ──
+            HStack(spacing: 8) {
+                Image(systemName: livenessVerified
+                      ? "checkmark.circle.fill"
+                      : "eye.circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(livenessVerified ? .green : .orange)
+                Text(livenessVerified
+                     ? "Liveness verified"
+                     : "Please blink once to confirm you're live")
+                    .font(.caption.bold())
+                    .foregroundStyle(livenessVerified ? .green : .orange)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background((livenessVerified ? Color.green : Color.orange).opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .animation(.easeInOut(duration: 0.25), value: livenessVerified)
+
             Button {
                 Task { await verifyFace() }
             } label: {
@@ -198,7 +241,7 @@ struct LoginView: View {
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!camera.faceDetected || isProcessing ||
+            .disabled(!camera.faceDetected || !livenessVerified || isProcessing ||
                       userId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
@@ -208,9 +251,21 @@ struct LoginView: View {
     @ViewBuilder
     private var passwordSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Password")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Password")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                NavigationLink(destination: ForgotPasswordView(prefillUserId: userId)) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "faceid")
+                            .font(.caption2)
+                        Text("Forgot password?")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.blue)
+                }
+            }
             SecureField("Enter your password", text: $password)
                 .padding(14)
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -243,6 +298,20 @@ struct LoginView: View {
         guard let user = userStore.findUser(userId: uid) else {
             logStore.add(userId: uid, eventType: .userNotFound)
             errorMsg = "User '\(uid)' not found."
+            haptic.notificationOccurred(.error)
+            return
+        }
+        // ── Account disabled check ──
+        guard user.isActive else {
+            errorMsg = "Account is disabled. Please contact your administrator."
+            haptic.notificationOccurred(.error)
+            return
+        }
+        // ── Lockout check ──
+        if userStore.isLocked(userId: uid) {
+            let mins = userStore.lockRemainingMinutes(userId: uid)
+            errorMsg = "Account locked. Please try again in \(mins) minute\(mins == 1 ? "" : "s")."
+            haptic.notificationOccurred(.error)
             return
         }
         guard let storedEmbedding = user.faceEmbedding else {
@@ -265,18 +334,30 @@ struct LoginView: View {
         guard let queryEmbedding = await FaceEmbeddingService.shared.extractEmbedding(from: photo) else {
             logStore.add(userId: uid, eventType: .noFaceDetected)
             errorMsg = "Could not extract face features. Ensure good lighting."
+            haptic.notificationOccurred(.error)
             return
         }
         let score = FaceMatchService.shared.similarity(queryEmbedding, storedEmbedding)
         lastScore = score
         if score >= FaceMatchService.shared.threshold {
+            userStore.clearFailedAttempts(userId: uid)
             logStore.add(userId: uid, eventType: .loginSuccess, similarityScore: score)
+            haptic.notificationOccurred(.success)
             session.loginUser(userId: uid)
             dismiss()
         } else {
+            userStore.recordFailedAttempt(userId: uid)
             logStore.add(userId: uid, eventType: .faceMatchFailed, similarityScore: score)
-            errorMsg = String(format: "Face not recognized (%.1f%% < %.0f%% required).",
-                              score * 100, FaceMatchService.shared.threshold * 100)
+            haptic.notificationOccurred(.error)
+            let remaining = userStore.isLocked(userId: uid) ? 0 :
+                (5 - (userStore.findUser(userId: uid)?.failedAttempts ?? 0))
+            if userStore.isLocked(userId: uid) {
+                let mins = userStore.lockRemainingMinutes(userId: uid)
+                errorMsg = "Too many failed attempts. Account locked for \(mins) minute\(mins == 1 ? "" : "s")."
+            } else {
+                errorMsg = String(format: "Face not recognized (%.1f%% < %.0f%% required). %d attempt\(remaining == 1 ? "" : "s") remaining.",
+                                  score * 100, FaceMatchService.shared.threshold * 100, remaining)
+            }
         }
     }
 
@@ -287,21 +368,45 @@ struct LoginView: View {
         let uid = userId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !uid.isEmpty else { errorMsg = "Please enter your User ID."; return }
         guard !password.isEmpty else { errorMsg = "Please enter your password."; return }
-        guard userStore.findUser(userId: uid) != nil else {
+        guard let user = userStore.findUser(userId: uid) else {
             logStore.add(userId: uid, eventType: .userNotFound)
             errorMsg = "User '\(uid)' not found."
+            haptic.notificationOccurred(.error)
+            return
+        }
+        // ── Account disabled check ──
+        guard user.isActive else {
+            errorMsg = "Account is disabled. Please contact your administrator."
+            haptic.notificationOccurred(.error)
+            return
+        }
+        // ── Lockout check ──
+        if userStore.isLocked(userId: uid) {
+            let mins = userStore.lockRemainingMinutes(userId: uid)
+            errorMsg = "Account locked. Please try again in \(mins) minute\(mins == 1 ? "" : "s")."
+            haptic.notificationOccurred(.error)
             return
         }
         isProcessing = true
         defer { isProcessing = false }
         try? await Task.sleep(nanoseconds: 300_000_000)
         if userStore.verifyPassword(userId: uid, password: password) {
+            userStore.clearFailedAttempts(userId: uid)
             logStore.add(userId: uid, eventType: .passwordLoginSuccess)
+            haptic.notificationOccurred(.success)
             session.loginUser(userId: uid)
             dismiss()
         } else {
+            userStore.recordFailedAttempt(userId: uid)
             logStore.add(userId: uid, eventType: .passwordLoginFailed)
-            errorMsg = "Incorrect password. Please try again."
+            haptic.notificationOccurred(.error)
+            if userStore.isLocked(userId: uid) {
+                let mins = userStore.lockRemainingMinutes(userId: uid)
+                errorMsg = "Too many failed attempts. Account locked for \(mins) minute\(mins == 1 ? "" : "s")."
+            } else {
+                let remaining = 5 - (userStore.findUser(userId: uid)?.failedAttempts ?? 0)
+                errorMsg = "Incorrect password. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining."
+            }
         }
     }
 }

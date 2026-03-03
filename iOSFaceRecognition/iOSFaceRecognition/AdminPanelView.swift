@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Charts
 
 struct AdminPanelView: View {
     @EnvironmentObject var session: SessionStore
@@ -35,6 +36,9 @@ struct AdminPanelView: View {
                     VStack(spacing: 20) {
                         // ── Stat cards ──
                         statCards
+
+                        // ── 7-day login trend chart ──
+                        chartSection
 
                         // ── User section ──
                         userSection
@@ -258,6 +262,16 @@ struct AdminPanelView: View {
                               title: "Access Logs", badge: "\(logStore.logs.count)")
                 }
                 Divider().padding(.leading, 56)
+                NavigationLink(destination: SystemBenchmarkView()) {
+                    actionRow(icon: "chart.xyaxis.line", color: .indigo,
+                              title: "System Benchmark")
+                }
+                Divider().padding(.leading, 56)
+                NavigationLink(destination: SystemSettingsView()) {
+                    actionRow(icon: "slider.horizontal.3", color: .teal,
+                              title: "System Settings")
+                }
+                Divider().padding(.leading, 56)
                 Button { generateInviteCode() } label: {
                     actionRow(icon: "ticket.fill", color: .purple,
                               title: "Generate Invite Code")
@@ -429,12 +443,99 @@ struct AdminPanelView: View {
         }
     }
 
+    // MARK: - 7-Day Trend Chart
+
+    @ViewBuilder
+    private var chartSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                Text("Login Trend (7 Days)")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 4)
+                Spacer()
+                HStack(spacing: 10) {
+                    legendDot(color: .green, label: "Success")
+                    legendDot(color: .red,   label: "Failed")
+                }
+                .padding(.horizontal, 4)
+            }
+
+            Chart(chartData()) { item in
+                BarMark(
+                    x: .value("Day",   item.dayLabel),
+                    y: .value("Count", item.count)
+                )
+                .foregroundStyle(item.isSuccess
+                    ? Color.green.opacity(0.75)
+                    : Color.red.opacity(0.65))
+                .cornerRadius(4, style: .continuous)
+            }
+            .frame(height: 140)
+            .chartXAxis {
+                AxisMarks(values: .automatic) { _ in
+                    AxisValueLabel().font(.caption2)
+                }
+            }
+            .chartYAxis {
+                AxisMarks(values: .automatic) { _ in
+                    AxisGridLine()
+                    AxisValueLabel().font(.caption2)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+        .padding(.top, 14)
+        .padding(.horizontal, 8)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func legendDot(color: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color.opacity(0.75))
+                .frame(width: 8, height: 8)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func chartData() -> [ChartDayData] {
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateFormat = "E"
+        var result: [ChartDayData] = []
+        for i in (0..<7).reversed() {
+            guard let day = cal.date(byAdding: .day, value: -i, to: Date()) else { continue }
+            let dayLogs = logStore.logs.filter { cal.isDate($0.timestamp, inSameDayAs: day) }
+            let label = i == 0 ? "Today" : fmt.string(from: day)
+            let successN = dayLogs.filter { $0.eventType.isSuccess }.count
+            let failedN  = dayLogs.filter { !$0.eventType.isSuccess }.count
+            result.append(ChartDayData(dayLabel: label, count: successN, isSuccess: true))
+            result.append(ChartDayData(dayLabel: label, count: failedN,  isSuccess: false))
+        }
+        return result
+    }
+
     private func todayLoginCount() -> Int {
         let cal = Calendar.current
         return logStore.logs.filter {
             $0.eventType.isSuccess && cal.isDateInToday($0.timestamp)
         }.count
     }
+}
+
+// MARK: - Chart Data Model
+
+private struct ChartDayData: Identifiable {
+    let id = UUID()
+    let dayLabel: String
+    let count: Int
+    let isSuccess: Bool
 }
 
 // MARK: - Stat Card
@@ -481,46 +582,162 @@ struct AdminUserDetailView: View {
         Array(logStore.logs(for: user.userId).prefix(5))
     }
 
+    // Current user from store (to observe live updates)
+    private var liveUser: AppUser { userStore.findUser(userId: user.userId) ?? user }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // ── Avatar header card ──
                 VStack(spacing: 10) {
-                    if let fn = user.faceImageFilename,
-                       let img = userStore.loadImage(filename: fn) {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 90, height: 90)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 3))
-                    } else {
-                        ZStack {
-                            Circle()
-                                .fill(user.role == .vip ? Color.yellow.opacity(0.20) : Color.blue.opacity(0.12))
+                    ZStack(alignment: .topTrailing) {
+                        if let fn = liveUser.faceImageFilename,
+                           let img = userStore.loadImage(filename: fn) {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
                                 .frame(width: 90, height: 90)
-                            Text(String(user.name.prefix(1)).uppercased())
-                                .font(.system(size: 36, weight: .semibold))
-                                .foregroundStyle(user.role == .vip ? .orange : .blue)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 3))
+                        } else {
+                            ZStack {
+                                Circle()
+                                    .fill(liveUser.role == .vip ? Color.yellow.opacity(0.20) : Color.blue.opacity(0.12))
+                                    .frame(width: 90, height: 90)
+                                Text(String(liveUser.name.prefix(1)).uppercased())
+                                    .font(.system(size: 36, weight: .semibold))
+                                    .foregroundStyle(liveUser.role == .vip ? .orange : .blue)
+                            }
+                        }
+                        // Disabled badge overlay
+                        if !liveUser.isActive {
+                            Image(systemName: "slash.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.red)
+                                .background(Circle().fill(Color(uiColor: .systemBackground)).padding(2))
                         }
                     }
-                    Text(user.name)
+                    Text(liveUser.name)
                         .font(.title3.bold())
-                    Text("ID: \(user.userId)")
+                    Text("ID: \(liveUser.userId)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text(user.role.rawValue)
-                        .font(.caption.bold())
+
+                    // Role badge (tappable menu to change)
+                    Menu {
+                        ForEach(UserRole.allCases, id: \.self) { role in
+                            Button {
+                                userStore.updateRole(userId: liveUser.userId, newRole: role)
+                            } label: {
+                                Label(role.rawValue,
+                                      systemImage: liveUser.role == role ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(liveUser.role.rawValue)
+                                .font(.caption.bold())
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                        }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
-                        .background(user.role == .vip ? Color.yellow.opacity(0.22) : Color.blue.opacity(0.12))
-                        .foregroundStyle(user.role == .vip ? Color.orange : Color.blue)
+                        .background(liveUser.role == .vip ? Color.yellow.opacity(0.22) : Color.blue.opacity(0.12))
+                        .foregroundStyle(liveUser.role == .vip ? Color.orange : Color.blue)
                         .clipShape(Capsule())
+                    }
+
+                    // Status chips
+                    HStack(spacing: 8) {
+                        if !liveUser.isActive {
+                            Label("Disabled", systemImage: "xmark.circle.fill")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.red)
+                                .clipShape(Capsule())
+                        }
+                        if userStore.isLocked(userId: liveUser.userId) {
+                            Label("Locked", systemImage: "lock.fill")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.orange)
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                // ── Admin Controls ──
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Admin Controls")
+                        .font(.footnote.bold())
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.bottom, 8)
+                        .padding(.horizontal, 4)
+
+                    AppCard {
+                        // Enable / Disable toggle
+                        HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(liveUser.isActive ? Color.green : Color.gray)
+                                    .frame(width: 32, height: 32)
+                                Image(systemName: liveUser.isActive ? "checkmark.circle" : "xmark.circle")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(.white)
+                            }
+                            Text(liveUser.isActive ? "Account Active" : "Account Disabled")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { liveUser.isActive },
+                                set: { userStore.setActive(userId: liveUser.userId, isActive: $0) }
+                            ))
+                            .labelsHidden()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
+
+                        if userStore.isLocked(userId: liveUser.userId) {
+                            Divider().padding(.leading, 16)
+                            Button {
+                                userStore.unlockAccount(userId: liveUser.userId)
+                            } label: {
+                                HStack {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.orange)
+                                            .frame(width: 32, height: 32)
+                                        Image(systemName: "lock.open.fill")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(.white)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Unlock Account")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.primary)
+                                        Text("\(liveUser.failedAttempts) failed attempts — locked for \(userStore.lockRemainingMinutes(userId: liveUser.userId)) min")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 13)
+                            }
+                        }
+                    }
+                }
 
                 // ── Account Details ──
                 VStack(alignment: .leading, spacing: 0) {
@@ -533,17 +750,21 @@ struct AdminUserDetailView: View {
 
                     AppCard {
                         detailRow(label: "Joined",
-                                  value: user.createdAt.formatted(date: .long, time: .shortened))
+                                  value: liveUser.createdAt.formatted(date: .long, time: .shortened))
                         Divider().padding(.leading, 16)
                         detailRow(label: "Face",
-                                  value: user.faceEmbedding != nil
-                                    ? "Enrolled (\(user.faceEmbedding!.count)D)"
+                                  value: liveUser.faceEmbedding != nil
+                                    ? "Enrolled (\(liveUser.faceEmbedding!.count)D)"
                                     : "Not registered",
-                                  valueColor: user.faceEmbedding != nil ? .green : .red)
+                                  valueColor: liveUser.faceEmbedding != nil ? .green : .red)
                         Divider().padding(.leading, 16)
                         detailRow(label: "Password",
-                                  value: user.passwordHash != nil ? "Set (SHA-256)" : "Not set",
-                                  valueColor: user.passwordHash != nil ? .green : .orange)
+                                  value: liveUser.passwordHash != nil ? "Set (SHA-256)" : "Not set",
+                                  valueColor: liveUser.passwordHash != nil ? .green : .orange)
+                        Divider().padding(.leading, 16)
+                        detailRow(label: "Attempts",
+                                  value: "\(liveUser.failedAttempts) failed",
+                                  valueColor: liveUser.failedAttempts >= 3 ? .orange : .secondary)
                     }
                 }
 
