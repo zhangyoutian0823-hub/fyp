@@ -19,6 +19,7 @@ enum AccessEventType: String, Codable, CaseIterable {
     case adminLoginFailed     = "Admin Login Failed"
     case passwordLoginSuccess = "Password Login Success"   // 密码方式登录成功
     case passwordLoginFailed  = "Password Login Failed"    // 密码方式登录失败
+    case impostorAttempt      = "Impostor Test"            // 管理员冒名者测试（FAR 评估）
 
     var icon: String {
         switch self {
@@ -32,6 +33,8 @@ enum AccessEventType: String, Codable, CaseIterable {
             return "person.slash"
         case .noFaceDetected:
             return "eye.slash"
+        case .impostorAttempt:
+            return "person.fill.questionmark"
         }
     }
 

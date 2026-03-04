@@ -123,78 +123,82 @@ struct WelcomeView: View {
 
     @ViewBuilder
     private func profileHeader(user: AppUser) -> some View {
-        ZStack(alignment: .bottom) {
-            // Gradient banner
-            LinearGradient.appHeroBlue
-                .frame(height: 180)
-                .frame(maxWidth: .infinity)
+        ZStack(alignment: .top) {
+            // ── Layer 1: Background (gradient + white info section) ──
+            VStack(spacing: 0) {
+                // Gradient banner
+                LinearGradient.appHeroBlue
+                    .frame(height: 180)
+                    .frame(maxWidth: .infinity)
 
-            VStack(spacing: 12) {
-                // Avatar
-                ZStack {
-                    if let fn = user.faceImageFilename,
-                       let img = userStore.loadImage(filename: fn) {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 88, height: 88)
-                            .clipShape(Circle())
-                    } else {
-                        Circle()
-                            .fill(Color(uiColor: .tertiarySystemGroupedBackground))
-                            .frame(width: 88, height: 88)
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.secondary)
+                // White section below banner
+                VStack(spacing: 6) {
+                    Spacer().frame(height: 50) // space for avatar lower half
+
+                    // Name with edit pencil button
+                    Button {
+                        editNameText = user.name
+                        showEditName = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(user.name)
+                                .font(.title3.bold())
+                                .foregroundStyle(.primary)
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Color.blue.opacity(0.65))
+                        }
                     }
+
+                    Text("ID: \(user.userId)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    // Role badge
+                    Text(user.role.rawValue)
+                        .font(.caption.bold())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(
+                            user.role == .vip
+                            ? Color.yellow.opacity(0.22)
+                            : Color.blue.opacity(0.12)
+                        )
+                        .foregroundStyle(
+                            user.role == .vip ? Color.orange : Color.blue
+                        )
+                        .clipShape(Capsule())
+                        .padding(.bottom, 16)
                 }
-                .overlay(
+                .frame(maxWidth: .infinity)
+                .background(Color(uiColor: .systemGroupedBackground))
+            }
+
+            // ── Layer 2: Avatar (drawn on top of white background) ──
+            // padding(.top, 136) positions avatar top edge at y=136,
+            // so the centre sits at y = 136 + 44 = 180 (gradient/white boundary).
+            ZStack {
+                if let fn = user.faceImageFilename,
+                   let img = userStore.loadImage(filename: fn) {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 88, height: 88)
+                        .clipShape(Circle())
+                } else {
                     Circle()
-                        .stroke(Color(uiColor: .systemBackground), lineWidth: 3)
-                )
-                .offset(y: 44)
-            }
-        }
-        // White section below banner
-        VStack(spacing: 6) {
-            Spacer().frame(height: 50) // space for avatar offset
-
-            // Name with edit pencil button
-            Button {
-                editNameText = user.name
-                showEditName = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(user.name)
-                        .font(.title3.bold())
-                        .foregroundStyle(.primary)
-                    Image(systemName: "pencil.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.blue.opacity(0.65))
+                        .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .frame(width: 88, height: 88)
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
                 }
             }
-
-            Text("ID: \(user.userId)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            // Role badge
-            Text(user.role.rawValue)
-                .font(.caption.bold())
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .background(
-                    user.role == .vip
-                    ? Color.yellow.opacity(0.22)
-                    : Color.blue.opacity(0.12)
-                )
-                .foregroundStyle(
-                    user.role == .vip ? Color.orange : Color.blue
-                )
-                .clipShape(Capsule())
-                .padding(.bottom, 16)
+            .overlay(
+                Circle()
+                    .stroke(Color(uiColor: .systemBackground), lineWidth: 3)
+            )
+            .padding(.top, 136) // avatar centre at y = 136 + 44 = 180
         }
-        .frame(maxWidth: .infinity)
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 
     // MARK: - Last Login Info

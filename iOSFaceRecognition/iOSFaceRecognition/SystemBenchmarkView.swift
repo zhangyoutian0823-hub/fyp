@@ -72,6 +72,48 @@ struct SystemBenchmarkView: View {
         return Double(failScores.reduce(0, +)) / Double(failScores.count) * 100
     }
 
+    // ── Impostor / FAR stats ──
+    private var impostorScores: [Float] {
+        allLogs.filter { $0.eventType == .impostorAttempt }
+               .compactMap { $0.similarityScore }
+    }
+    private var impostorFooledCount: Int {
+        impostorScores.filter { $0 >= AppSettings.faceThreshold }.count
+    }
+    private var trueFAR: Double {
+        guard !impostorScores.isEmpty else { return 0 }
+        return Double(impostorFooledCount) / Double(impostorScores.count) * 100
+    }
+    private var avgImpostorSim: Double {
+        guard !impostorScores.isEmpty else { return 0 }
+        return Double(impostorScores.reduce(0, +)) / Double(impostorScores.count) * 100
+    }
+
+    // ── ROC curve data ──
+    private struct ROCPoint: Identifiable {
+        let id: Double    // threshold value used as stable id
+        let far: Double   // False Accept Rate (%) at this threshold
+        let frr: Double   // False Rejection Rate (%) at this threshold
+        let isCurrent: Bool
+    }
+
+    private var rocPoints: [ROCPoint] {
+        let genuineScores = successScores + failScores
+        let current = Double(AppSettings.faceThreshold)
+        return stride(from: 0.55, through: 0.95, by: 0.05).map { t in
+            let ft = Float(t)
+            let frr: Double = genuineScores.isEmpty ? 0.0
+                : Double(genuineScores.filter { $0 < ft }.count) / Double(genuineScores.count) * 100
+            let far: Double = impostorScores.isEmpty ? 0.0
+                : Double(impostorScores.filter { $0 >= ft }.count) / Double(impostorScores.count) * 100
+            return ROCPoint(id: t, far: far, frr: frr, isCurrent: abs(t - current) < 0.001)
+        }
+    }
+
+    private var hasROCData: Bool {
+        !impostorScores.isEmpty && (!successScores.isEmpty || !failScores.isEmpty)
+    }
+
     // ── Per-user stats ──
     private struct UserStat: Identifiable {
         let id: String
@@ -139,6 +181,14 @@ struct SystemBenchmarkView: View {
                 // ── Similarity distribution chart ──
                 if !successScores.isEmpty || !failScores.isEmpty {
                     similarityChartSection
+                }
+
+                // ── FAR metrics (impostor test results) ──
+                farMetricsSection
+
+                // ── ROC curve (requires both genuine and impostor score data) ──
+                if hasROCData {
+                    rocCurveSection
                 }
 
                 // ── Per-user table ──
@@ -274,6 +324,174 @@ struct SystemBenchmarkView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    // MARK: - FAR Metrics Section
+
+    @ViewBuilder
+    private var farMetricsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("FAR — Impostor Test Results", icon: "person.fill.questionmark")
+
+            if impostorScores.isEmpty {
+                // Placeholder when no tests have been run yet
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("No impostor tests recorded")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Text("Use the FAR Impostor Test in the Admin Panel to collect real FAR data.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    metricCard(
+                        title: "Impostor Tests",
+                        value: "\(impostorScores.count)",
+                        icon: "person.fill.questionmark",
+                        color: .indigo
+                    )
+                    metricCard(
+                        title: "True FAR",
+                        value: String(format: "%.1f%%", trueFAR),
+                        icon: "exclamationmark.triangle",
+                        color: trueFAR == 0 ? .green : (trueFAR < 10 ? .orange : .red),
+                        subtitle: "At current threshold"
+                    )
+                }
+                HStack(spacing: 12) {
+                    miniStatCard(label: "Fooled System",
+                                 value: "\(impostorFooledCount)",
+                                 color: impostorFooledCount == 0 ? .green : .red)
+                    miniStatCard(label: "Avg Impostor Sim",
+                                 value: String(format: "%.1f%%", avgImpostorSim),
+                                 color: .purple)
+                    miniStatCard(label: "Correctly Rejected",
+                                 value: "\(impostorScores.count - impostorFooledCount)",
+                                 color: .green)
+                }
+            }
+        }
+    }
+
+    // MARK: - ROC Curve Section
+
+    @ViewBuilder
+    private var rocCurveSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader("ROC Curve", icon: "chart.line.uptrend.xyaxis")
+                Spacer()
+                HStack(spacing: 10) {
+                    legendDot(color: .blue,   label: "FRR")
+                    legendDot(color: .red,    label: "FAR")
+                    legendDot(color: .orange, label: "Current")
+                }
+            }
+
+            Text("Each point = one threshold (0.55–0.95). Lower-left = better performance.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+
+            Chart {
+                // FRR line
+                ForEach(rocPoints) { pt in
+                    LineMark(
+                        x: .value("Threshold", pt.id),
+                        y: .value("FRR (%)", pt.frr)
+                    )
+                    .foregroundStyle(Color.blue.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                    .symbol(Circle().strokeBorder(lineWidth: 1))
+                    .symbolSize(20)
+                    .interpolationMethod(.catmullRom)
+                }
+                // FAR line
+                ForEach(rocPoints) { pt in
+                    LineMark(
+                        x: .value("Threshold", pt.id),
+                        y: .value("FAR (%)", pt.far)
+                    )
+                    .foregroundStyle(Color.red.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                    .symbol(Circle().strokeBorder(lineWidth: 1))
+                    .symbolSize(20)
+                    .interpolationMethod(.catmullRom)
+                }
+                // Current threshold vertical marker
+                RuleMark(x: .value("Current", Double(AppSettings.faceThreshold)))
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
+                    .foregroundStyle(.orange)
+                    .annotation(position: .top) {
+                        Text("Threshold")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
+            }
+            .frame(height: 180)
+            .chartXAxis {
+                AxisMarks(values: [0.60, 0.70, 0.80, 0.90]) { value in
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(String(format: "%.0f%%", v * 100)).font(.caption2)
+                        }
+                    }
+                    AxisGridLine()
+                }
+            }
+            .chartYAxis {
+                AxisMarks(values: .automatic) { _ in
+                    AxisGridLine()
+                    AxisValueLabel().font(.caption2)
+                }
+            }
+            .chartYAxisLabel("Rate (%)", position: .leading)
+            .chartXAxisLabel("Threshold", position: .bottom)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+
+            // EER note
+            if let eerThreshold = findEER() {
+                HStack(spacing: 6) {
+                    Image(systemName: "equal.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text(String(format: "EER ≈ %.0f%% threshold (FAR ≈ FRR)", eerThreshold * 100))
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+            }
+        }
+        .padding(.top, 12)
+        .padding(.horizontal, 8)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// Find threshold where FAR ≈ FRR (Equal Error Rate).
+    private func findEER() -> Double? {
+        guard hasROCData else { return nil }
+        var minDiff = Double.infinity
+        var eerThreshold: Double?
+        for pt in rocPoints {
+            let diff = abs(pt.far - pt.frr)
+            if diff < minDiff {
+                minDiff = diff
+                eerThreshold = pt.id
+            }
+        }
+        return eerThreshold
+    }
+
     // MARK: - Per-User Table
 
     @ViewBuilder
@@ -349,8 +567,9 @@ struct SystemBenchmarkView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 noteRow("FRR", "Calculated from genuine user rejections ÷ face attempts.")
-                noteRow("FAR", "Cannot be derived from production logs alone. Requires controlled impostor test data.")
-                noteRow("EER", "Equal Error Rate requires plotting FAR vs FRR curves across multiple thresholds — use the Settings page to vary threshold.")
+                noteRow("FAR", "Requires controlled impostor tests (Admin Panel → FAR Impostor Test). FAR = impostor attempts that passed threshold ÷ total impostor attempts.")
+                noteRow("ROC", "Plots FAR vs FRR at each threshold (0.55–0.95). Requires both genuine and impostor score data.")
+                noteRow("EER", "Equal Error Rate — the threshold where FAR ≈ FRR. Estimated from the ROC curve crossing point.")
                 noteRow("Similarity", "Cosine similarity of L2-normalised 128D Vision embeddings.")
             }
         }

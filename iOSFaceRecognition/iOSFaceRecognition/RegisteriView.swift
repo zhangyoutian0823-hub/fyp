@@ -19,6 +19,8 @@ struct RegisterView: View {
     @State private var confirmPassword: String = ""
     @State private var errorMsg: String?
     @State private var capturedImages: [UIImage] = []
+    @State private var capturedQualities: [Float] = []   // VNFaceObservation.confidence per frame
+    @State private var pendingQuality: Float = 0.0       // snapshot at capture-button tap
     @State private var isProcessing = false
 
     /// Triggers navigation to LoginView after successful registration.
@@ -26,6 +28,13 @@ struct RegisterView: View {
     @State private var registeredUserId = ""
 
     private let requiredFrames = 3
+
+    // Multi-pose guidance: straight → left → right
+    private let poseInstructions: [(icon: String, label: String)] = [
+        (icon: "arrow.up.circle.fill",       label: "Frame 1 — Look Straight Ahead"),
+        (icon: "arrow.turn.up.left",          label: "Frame 2 — Turn Slightly Left"),
+        (icon: "arrow.turn.up.right",         label: "Frame 3 — Turn Slightly Right"),
+    ]
 
     var passwordTooShort: Bool { !password.isEmpty && password.count < 6 }
     var passwordMismatch: Bool { !confirmPassword.isEmpty && password != confirmPassword }
@@ -108,6 +117,45 @@ struct RegisterView: View {
                         }
                         ProgressView(value: Double(capturedImages.count), total: Double(requiredFrames))
                             .tint(.green)
+
+                        // Average quality indicator
+                        if !capturedQualities.isEmpty {
+                            let avg = capturedQualities.reduce(0, +) / Float(capturedQualities.count)
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(qualityColor(avg))
+                                    .frame(width: 8, height: 8)
+                                Text(String(format: "Avg Quality: %.0f%%", avg * 100))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                // Low quality warning
+                                if let lowIdx = capturedQualities.indices.first(where: { capturedQualities[$0] < 0.7 }) {
+                                    Label("Frame \(lowIdx + 1) low quality", systemImage: "exclamationmark.triangle")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                    }
+
+                    // Pose guidance card
+                    if capturedImages.count < requiredFrames {
+                        let pose = poseInstructions[capturedImages.count]
+                        HStack(spacing: 10) {
+                            Image(systemName: pose.icon)
+                                .font(.system(size: 20))
+                                .foregroundStyle(.blue)
+                            Text(pose.label)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .animation(.easeInOut, value: capturedImages.count)
                     }
 
                     // Camera
@@ -146,24 +194,30 @@ struct RegisterView: View {
                         .padding(12)
                     }
 
-                    // Captured thumbnails
+                    // Captured thumbnails with pose label + quality dot
                     if !capturedImages.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
                                 ForEach(Array(capturedImages.enumerated()), id: \.offset) { i, img in
-                                    ZStack(alignment: .bottomTrailing) {
-                                        Image(uiImage: img)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 60, height: 60)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                                        Text("\(i + 1)")
+                                    VStack(spacing: 4) {
+                                        ZStack(alignment: .topLeading) {
+                                            Image(uiImage: img)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 64, height: 64)
+                                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                            // Quality dot (top-left)
+                                            if i < capturedQualities.count {
+                                                Circle()
+                                                    .fill(qualityColor(capturedQualities[i]))
+                                                    .frame(width: 10, height: 10)
+                                                    .padding(4)
+                                            }
+                                        }
+                                        // Pose label below thumbnail
+                                        Text(i == 0 ? "Straight" : i == 1 ? "Left" : "Right")
                                             .font(.caption2.bold())
-                                            .foregroundStyle(.white)
-                                            .frame(width: 18, height: 18)
-                                            .background(Color.green)
-                                            .clipShape(Circle())
-                                            .offset(x: 4, y: 4)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -179,6 +233,7 @@ struct RegisterView: View {
                                 errorMsg = "No face detected. Please face the camera."
                                 return
                             }
+                            pendingQuality = camera.currentFaceConfidence
                             camera.capture()
                         } label: {
                             Label("Capture Frame", systemImage: "camera.circle.fill")
@@ -194,6 +249,7 @@ struct RegisterView: View {
                         if !capturedImages.isEmpty {
                             Button {
                                 capturedImages = []
+                                capturedQualities = []
                                 camera.lastPhoto = nil
                             } label: {
                                 Image(systemName: "arrow.counterclockwise")
@@ -258,6 +314,7 @@ struct RegisterView: View {
         .onChange(of: camera.lastPhoto) { _, newPhoto in
             if let img = newPhoto, capturedImages.count < requiredFrames {
                 capturedImages.append(img)
+                capturedQualities.append(pendingQuality)
                 camera.lastPhoto = nil
             }
         }
@@ -313,6 +370,13 @@ struct RegisterView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.9))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// Returns green / orange / red based on VNFaceObservation confidence.
+    private func qualityColor(_ confidence: Float) -> Color {
+        if confidence >= 0.9 { return .green }
+        if confidence >= 0.7 { return .orange }
+        return .red
     }
 
     // MARK: - Actions

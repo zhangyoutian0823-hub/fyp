@@ -23,6 +23,10 @@ final class CameraService: NSObject, ObservableObject {
     /// Reset with `resetBlink()` between verification sessions.
     @Published var blinkCount: Int = 0
 
+    /// VNFaceObservation.confidence of the most recent detection frame (0.0–1.0).
+    /// Updated every video frame. Sample at capture-button tap time to score registration quality.
+    @Published var currentFaceConfidence: Float = 0.0
+
     // MARK: - AVFoundation
     let session = AVCaptureSession()
 
@@ -152,6 +156,7 @@ final class CameraService: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.faceObservations = results
                 self.faceDetected = !results.isEmpty
+                self.currentFaceConfidence = results.first.map { Float($0.confidence) } ?? 0.0
             }
             // Blink detection from first face's landmarks
             if let face = results.first, let landmarks = face.landmarks {

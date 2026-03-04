@@ -267,6 +267,11 @@ struct AdminPanelView: View {
                               title: "System Benchmark")
                 }
                 Divider().padding(.leading, 56)
+                NavigationLink(destination: FARTestView()) {
+                    actionRow(icon: "person.fill.questionmark", color: .red,
+                              title: "FAR Impostor Test")
+                }
+                Divider().padding(.leading, 56)
                 NavigationLink(destination: SystemSettingsView()) {
                     actionRow(icon: "slider.horizontal.3", color: .teal,
                               title: "System Settings")
