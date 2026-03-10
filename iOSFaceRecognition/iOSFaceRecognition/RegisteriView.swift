@@ -164,7 +164,7 @@ struct RegisterView: View {
                             .frame(height: 280)
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                        FaceOverlayView(observations: camera.faceObservations)
+                        FaceOverlayView(observations: camera.faceObservations, previewLayer: camera.previewLayer)
                             .frame(height: 280)
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 

@@ -127,7 +127,7 @@ struct FARTestView: View {
                             .frame(height: 260)
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                        FaceOverlayView(observations: camera.faceObservations)
+                        FaceOverlayView(observations: camera.faceObservations, previewLayer: camera.previewLayer)
                             .frame(height: 260)
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 

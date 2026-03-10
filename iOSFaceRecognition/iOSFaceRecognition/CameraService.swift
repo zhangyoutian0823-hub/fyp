@@ -30,6 +30,9 @@ final class CameraService: NSObject, ObservableObject {
     // MARK: - AVFoundation
     let session = AVCaptureSession()
 
+    /// 由 CameraView 在 makeUIView 时注入，供 FaceOverlayView 做精确坐标转换用。
+    weak var previewLayer: AVCaptureVideoPreviewLayer?
+
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let queue = DispatchQueue(label: "camera.queue")

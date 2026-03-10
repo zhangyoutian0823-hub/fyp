@@ -13,6 +13,7 @@ struct AdminPanelView: View {
     @EnvironmentObject var userStore: UserStore
     @EnvironmentObject var adminStore: AdminStore
     @EnvironmentObject var logStore: LogStore
+    @EnvironmentObject var passwordStore: PasswordStore
 
     @State private var keyword = ""
     @State private var generatedInviteCode: String? = nil
@@ -230,7 +231,7 @@ struct AdminPanelView: View {
                 }
 
                 Button(role: .destructive) {
-                    userStore.deleteUser(userId: user.userId)
+                    userStore.deleteUser(userId: user.userId, passwordStore: passwordStore)
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 14, weight: .medium))

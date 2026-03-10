@@ -26,13 +26,14 @@ struct LoginView: View {
 
     @StateObject private var camera = CameraService()
 
-    @State private var userId: String = ""
+    @State private var userId: String = ""          // 仅密码登录模式使用
     @State private var password: String = ""
     @State private var loginMethod: LoginMethod = .face
     @State private var errorMsg: String?
     @State private var isProcessing = false
     @State private var lastScore: Float?
     @State private var livenessVerified: Bool = false
+    @State private var identifiedUser: AppUser?     // 1:N 识别后存放结果
 
     var body: some View {
         ScrollView {
@@ -72,18 +73,20 @@ struct LoginView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                // ── User ID ──
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("User ID")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                    TextField("Enter your user ID", text: $userId)
-                        .padding(14)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .disabled(isProcessing)
+                // ── User ID（密码登录模式才需要输入）──
+                if loginMethod == .password {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("User ID")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        TextField("Enter your user ID", text: $userId)
+                            .padding(14)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .disabled(isProcessing)
+                    }
                 }
 
                 // ── Mode-specific content ──
@@ -134,8 +137,14 @@ struct LoginView: View {
                 camera.start()
                 camera.resetBlink()
                 livenessVerified = false
+                identifiedUser = nil
+                lastScore = nil
+                errorMsg = nil
             } else {
                 camera.stop()
+                identifiedUser = nil
+                lastScore = nil
+                errorMsg = nil
             }
         }
         // Liveness: mark verified on first detected blink
@@ -158,7 +167,7 @@ struct LoginView: View {
                     .frame(height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                FaceOverlayView(observations: camera.faceObservations)
+                FaceOverlayView(observations: camera.faceObservations, previewLayer: camera.previewLayer)
                     .frame(height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
@@ -190,13 +199,24 @@ struct LoginView: View {
                     if let score = lastScore {
                         HStack {
                             Spacer()
-                            Text(String(format: "%.1f%% match", score * 100))
-                                .font(.caption.bold())
-                                .foregroundStyle(score >= FaceMatchService.shared.threshold ? .green : .red)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.black.opacity(0.45))
-                                .clipShape(Capsule())
+                            VStack(alignment: .trailing, spacing: 4) {
+                                if let user = identifiedUser {
+                                    Text("Identified: \(user.name)")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(Color.green.opacity(0.85))
+                                        .clipShape(Capsule())
+                                }
+                                Text(String(format: "%.1f%% match", score * 100))
+                                    .font(.caption.bold())
+                                    .foregroundStyle(score >= FaceMatchService.shared.threshold ? .green : .red)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.black.opacity(0.45))
+                                    .clipShape(Capsule())
+                            }
                         }
                     }
                 }
@@ -241,8 +261,7 @@ struct LoginView: View {
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!camera.faceDetected || !livenessVerified || isProcessing ||
-                      userId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(!camera.faceDetected || !livenessVerified || isProcessing)
         }
     }
 
@@ -289,76 +308,78 @@ struct LoginView: View {
                   password.isEmpty)
     }
 
-    // MARK: - Face Verification
+    // MARK: - Face Verification (1:N 自动识别，无需 User ID)
 
     private func verifyFace() async {
-        errorMsg = nil; lastScore = nil
-        let uid = userId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !uid.isEmpty else { errorMsg = "Please enter your User ID."; return }
-        guard let user = userStore.findUser(userId: uid) else {
-            logStore.add(userId: uid, eventType: .userNotFound)
-            errorMsg = "User '\(uid)' not found."
-            haptic.notificationOccurred(.error)
-            return
-        }
-        // ── Account disabled check ──
-        guard user.isActive else {
-            errorMsg = "Account is disabled. Please contact your administrator."
-            haptic.notificationOccurred(.error)
-            return
-        }
-        // ── Lockout check ──
-        if userStore.isLocked(userId: uid) {
-            let mins = userStore.lockRemainingMinutes(userId: uid)
-            errorMsg = "Account locked. Please try again in \(mins) minute\(mins == 1 ? "" : "s")."
-            haptic.notificationOccurred(.error)
-            return
-        }
-        guard let storedEmbedding = user.faceEmbedding else {
-            errorMsg = "No face registered for this account."
-            return
-        }
+        errorMsg = nil; lastScore = nil; identifiedUser = nil
         guard camera.faceDetected else {
             errorMsg = "No face detected. Please face the camera."
             return
         }
         isProcessing = true
         defer { isProcessing = false }
+
+        // ── Step 1: 拍照 ──
+        camera.lastPhoto = nil
         camera.capture()
         var waitCount = 0
         while camera.lastPhoto == nil && waitCount < 20 {
             try? await Task.sleep(nanoseconds: 100_000_000)
             waitCount += 1
         }
-        guard let photo = camera.lastPhoto else { errorMsg = "Failed to capture photo."; return }
+        guard let photo = camera.lastPhoto else {
+            errorMsg = "Failed to capture photo. Please try again."
+            return
+        }
+
+        // ── Step 2: 提取人脸特征向量 ──
         guard let queryEmbedding = await FaceEmbeddingService.shared.extractEmbedding(from: photo) else {
-            logStore.add(userId: uid, eventType: .noFaceDetected)
             errorMsg = "Could not extract face features. Ensure good lighting."
             haptic.notificationOccurred(.error)
             return
         }
-        let score = FaceMatchService.shared.similarity(queryEmbedding, storedEmbedding)
-        lastScore = score
-        if score >= FaceMatchService.shared.threshold {
-            userStore.clearFailedAttempts(userId: uid)
-            logStore.add(userId: uid, eventType: .loginSuccess, similarityScore: score)
-            haptic.notificationOccurred(.success)
-            session.loginUser(userId: uid)
-            dismiss()
-        } else {
-            userStore.recordFailedAttempt(userId: uid)
-            logStore.add(userId: uid, eventType: .faceMatchFailed, similarityScore: score)
+
+        // ── Step 3: 1:N 匹配所有用户 ──
+        let (bestId, bestScore) = userStore.identifyUser(from: queryEmbedding)
+        lastScore = bestScore
+
+        guard bestScore >= FaceMatchService.shared.threshold, let uid = bestId else {
+            // 没有找到任何匹配的人
+            logStore.add(userId: "unknown", eventType: .faceMatchFailed, similarityScore: bestScore)
             haptic.notificationOccurred(.error)
-            let remaining = userStore.isLocked(userId: uid) ? 0 :
-                (5 - (userStore.findUser(userId: uid)?.failedAttempts ?? 0))
-            if userStore.isLocked(userId: uid) {
-                let mins = userStore.lockRemainingMinutes(userId: uid)
-                errorMsg = "Too many failed attempts. Account locked for \(mins) minute\(mins == 1 ? "" : "s")."
-            } else {
-                errorMsg = String(format: "Face not recognized (%.1f%% < %.0f%% required). %d attempt\(remaining == 1 ? "" : "s") remaining.",
-                                  score * 100, FaceMatchService.shared.threshold * 100, remaining)
-            }
+            errorMsg = String(format: "No matching face found (best match: %.1f%% < %.0f%% required).",
+                              bestScore * 100, FaceMatchService.shared.threshold * 100)
+            return
         }
+
+        // ── Step 4: 找到候选用户，检查账号状态 ──
+        guard let user = userStore.findUser(userId: uid) else {
+            errorMsg = "Authentication error. Please try again."
+            return
+        }
+
+        guard user.isActive else {
+            logStore.add(userId: uid, eventType: .faceMatchFailed, similarityScore: bestScore)
+            haptic.notificationOccurred(.error)
+            errorMsg = "This account has been disabled. Please contact your administrator."
+            return
+        }
+
+        if userStore.isLocked(userId: uid) {
+            let mins = userStore.lockRemainingMinutes(userId: uid)
+            logStore.add(userId: uid, eventType: .faceMatchFailed, similarityScore: bestScore)
+            haptic.notificationOccurred(.error)
+            errorMsg = "Account locked. Please try again in \(mins) minute\(mins == 1 ? "" : "s")."
+            return
+        }
+
+        // ── Step 5: 登录成功 ──
+        identifiedUser = user
+        userStore.clearFailedAttempts(userId: uid)
+        logStore.add(userId: uid, eventType: .loginSuccess, similarityScore: bestScore)
+        haptic.notificationOccurred(.success)
+        session.loginUser(userId: uid)
+        dismiss()
     }
 
     // MARK: - Password Verification

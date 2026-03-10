@@ -208,12 +208,14 @@ final class UserStore: ObservableObject {
 
     // MARK: - Delete User
 
-    func deleteUser(userId: String) {
+    func deleteUser(userId: String, passwordStore: PasswordStore? = nil) {
         if let u = findUser(userId: userId), let fn = u.faceImageFilename {
             deleteImage(filename: fn)
         }
         users.removeAll { $0.userId == userId }
         persist()
+        // 同步删除该用户的所有密码条目，防止孤立数据残留
+        passwordStore?.deleteAll(for: userId)
     }
 
     // MARK: - Image Storage
@@ -239,6 +241,25 @@ final class UserStore: ObservableObject {
     private func deleteImage(filename: String) {
         let url = docsURL().appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: url)
+    }
+
+    // MARK: - 1:N Face Identification
+
+    /// 在全部已激活且已注册人脸的用户中，找出与 queryEmbedding 最相似的人。
+    /// - Returns: (userId, score)；userId 为 nil 表示没有任何注册用户可比对。
+    ///   调用方需自行判断 score 是否 >= 阈值。
+    func identifyUser(from queryEmbedding: [Float]) -> (userId: String?, score: Float) {
+        var bestId: String? = nil
+        var bestScore: Float = 0
+        for user in users {
+            guard user.isActive, let emb = user.faceEmbedding else { continue }
+            let score = FaceMatchService.shared.similarity(queryEmbedding, emb)
+            if score > bestScore {
+                bestScore = score
+                bestId = user.userId
+            }
+        }
+        return (bestId, bestScore)
     }
 
     // MARK: - Persistence

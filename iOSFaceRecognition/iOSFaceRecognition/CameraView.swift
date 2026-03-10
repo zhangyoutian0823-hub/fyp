@@ -18,6 +18,7 @@ struct CameraView: UIViewRepresentable {
         layer.connection?.videoOrientation = .portrait
         view.layer.addSublayer(layer)
         context.coordinator.layer = layer
+        service.previewLayer = layer   // 注入给 FaceOverlayView 做坐标转换
         return view
     }
 
