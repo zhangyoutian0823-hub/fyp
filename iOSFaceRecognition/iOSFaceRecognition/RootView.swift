@@ -17,13 +17,11 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if session.isAdminLoggedIn {
-                AdminPanelView()
-            } else if session.isLoggedIn {
+            if session.isLoggedIn {
                 TabView {
                     WelcomeView()
                         .tabItem {
-                            Label("My Account", systemImage: "person.crop.circle")
+                            Label("Account", systemImage: "person.crop.circle")
                         }
                     PasswordVaultView()
                         .tabItem {

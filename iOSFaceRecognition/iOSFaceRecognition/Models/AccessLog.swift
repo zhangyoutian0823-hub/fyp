@@ -15,17 +15,14 @@ enum AccessEventType: String, Codable, CaseIterable {
     case faceMatchFailed      = "Face Match Failed"
     case userNotFound         = "User Not Found"
     case noFaceDetected       = "No Face Detected"
-    case adminLoginSuccess    = "Admin Login Success"
-    case adminLoginFailed     = "Admin Login Failed"
-    case passwordLoginSuccess = "Password Login Success"   // 密码方式登录成功
-    case passwordLoginFailed  = "Password Login Failed"    // 密码方式登录失败
-    case impostorAttempt      = "Impostor Test"            // 管理员冒名者测试（FAR 评估）
+    case passwordLoginSuccess = "Password Login Success"
+    case passwordLoginFailed  = "Password Login Failed"
 
     var icon: String {
         switch self {
-        case .loginSuccess, .adminLoginSuccess, .passwordLoginSuccess:
+        case .loginSuccess, .passwordLoginSuccess:
             return "checkmark.circle.fill"
-        case .loginFailed, .adminLoginFailed, .passwordLoginFailed:
+        case .loginFailed, .passwordLoginFailed:
             return "xmark.circle.fill"
         case .faceMatchFailed:
             return "face.smiling.inverse"
@@ -33,16 +30,11 @@ enum AccessEventType: String, Codable, CaseIterable {
             return "person.slash"
         case .noFaceDetected:
             return "eye.slash"
-        case .impostorAttempt:
-            return "person.fill.questionmark"
         }
     }
 
     var isSuccess: Bool {
-        switch self {
-        case .loginSuccess, .adminLoginSuccess, .passwordLoginSuccess: return true
-        default: return false
-        }
+        self == .loginSuccess || self == .passwordLoginSuccess
     }
 }
 

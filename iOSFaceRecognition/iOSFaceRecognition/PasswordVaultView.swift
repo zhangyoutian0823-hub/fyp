@@ -2,12 +2,8 @@
 //  PasswordVaultView.swift
 //  iOSFaceRecognition
 //
-//  密码库主界面：
-//  - 顶部搜索栏
-//  - 收藏夹置顶区
-//  - 按首字母分组的全部条目列表
-//  - 空态引导
-//  - 右上角"+"添加新密码
+//  密码管理主页 — 仿 Apple Passwords 风格的分类卡片网格。
+//  卡片入口：全部 / 安全性 / 最近删除
 //
 
 import SwiftUI
@@ -16,92 +12,83 @@ struct PasswordVaultView: View {
     @EnvironmentObject var passwordStore: PasswordStore
     @EnvironmentObject var session: SessionStore
 
-    @State private var searchText  = ""
     @State private var showAddSheet = false
 
-    // 当前用户 ID
-    private var userId: String {
-        session.currentUserId ?? ""
-    }
+    private var userId: String { session.currentUserId ?? "" }
 
-    // 搜索过滤后的条目
-    private var filtered: [PasswordEntry] {
-        passwordStore.entries(for: userId, query: searchText)
-    }
-
-    // 收藏条目（搜索过滤后）
-    private var favorites: [PasswordEntry] {
-        filtered.filter { $0.isFavorite }
-    }
-
-    // 非收藏按首字母分组
-    private var grouped: [(letter: String, entries: [PasswordEntry])] {
-        let nonFav = filtered.filter { !$0.isFavorite }
-        let dict = Dictionary(grouping: nonFav) { $0.firstLetter }
-        return dict.keys.sorted().map { key in
-            (letter: key, entries: dict[key]!)
-        }
+    // 给 Security 卡片用的问题数（复用 SecurityCenterView 的逻辑）
+    private var issueCount: Int {
+        let all = passwordStore.entries(for: userId)
+        let weak    = all.filter { isWeak($0.password) }
+        let reused  = { () -> [PasswordEntry] in
+            let counts = Dictionary(grouping: all, by: { $0.password })
+            return all.filter { (counts[$0.password]?.count ?? 0) > 1 }
+        }()
+        let cutoff  = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
+        let old     = all.filter { $0.updatedAt < cutoff }
+        let ids = Set(weak.map(\.id)).union(reused.map(\.id)).union(old.map(\.id))
+        return ids.count
     }
 
     var body: some View {
         NavigationStack {
-            Group {
-                if filtered.isEmpty && searchText.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        // ── 收藏夹 ──
-                        if !favorites.isEmpty {
-                            Section("Favourites") {
-                                ForEach(favorites) { entry in
-                                    entryRow(entry)
-                                }
-                            }
-                        }
-
-                        // ── 全部（按字母分组）──
-                        if !grouped.isEmpty {
-                            ForEach(grouped, id: \.letter) { group in
-                                Section(group.letter) {
-                                    ForEach(group.entries) { entry in
-                                        entryRow(entry)
-                                    }
-                                }
-                            }
-                        }
-
-                        // ── 搜索无结果 ──
-                        if filtered.isEmpty && !searchText.isEmpty {
-                            Section {
-                                HStack {
-                                    Spacer()
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 32))
-                                            .foregroundStyle(.secondary)
-                                        Text("No results for \"\(searchText)\"")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.vertical, 24)
-                                    Spacer()
-                                }
-                            }
-                            .listRowBackground(Color.clear)
-                        }
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.flexible()), GridItem(.flexible())],
+                    spacing: 12
+                ) {
+                    // ── 全部 ──
+                    NavigationLink {
+                        AllPasswordsView()
+                    } label: {
+                        CategoryCard(
+                            title: "All",
+                            icon: "key.fill",
+                            iconColor: .blue,
+                            count: passwordStore.totalCount(for: userId)
+                        )
                     }
-                    .listStyle(.insetGrouped)
+                    .buttonStyle(.plain)
+
+                    // ── 安全性 ──
+                    NavigationLink {
+                        SecurityCenterView()
+                    } label: {
+                        CategoryCard(
+                            title: "Security",
+                            icon: issueCount > 0
+                                ? "exclamationmark.shield.fill"
+                                : "checkmark.shield.fill",
+                            iconColor: issueCount > 0 ? .red : .green,
+                            count: issueCount
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // ── 最近删除 ──
+                    NavigationLink {
+                        RecentlyDeletedView()
+                    } label: {
+                        CategoryCard(
+                            title: "Recently Deleted",
+                            icon: "trash.fill",
+                            iconColor: .gray,
+                            count: passwordStore.deletedCount(for: userId)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Passwords")
-            .searchable(text: $searchText, prompt: "Search passwords")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showAddSheet = true
                     } label: {
-                        Image(systemName: "plus")
-                            .fontWeight(.semibold)
+                        Image(systemName: "plus").fontWeight(.semibold)
                     }
                 }
             }
@@ -112,66 +99,57 @@ struct PasswordVaultView: View {
         }
     }
 
-    // MARK: - Entry Row
-
-    @ViewBuilder
-    private func entryRow(_ entry: PasswordEntry) -> some View {
-        NavigationLink {
-            PasswordDetailView(entry: entry)
-        } label: {
-            HStack(spacing: 14) {
-                // Icon
-                Image(systemName: entry.symbolName)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(Color.blue.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                // Text
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.title)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                    Text(entry.username)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.vertical, 2)
-        }
+    // MARK: - 弱密码判定（与 SecurityCenterView 保持一致）
+    private func isWeak(_ password: String) -> Bool {
+        if password.count < 10 { return true }
+        let hasUpper   = password.contains(where: { $0.isUppercase })
+        let hasDigit   = password.contains(where: { $0.isNumber })
+        let hasSpecial = password.contains(where: { !$0.isLetter && !$0.isNumber })
+        return [hasUpper, hasDigit, hasSpecial].filter { $0 }.count < 2
     }
+}
 
-    // MARK: - Empty State
+// MARK: - 分类卡片
 
-    private var emptyState: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "key.fill")
-                .font(.system(size: 56, weight: .light))
-                .foregroundStyle(.blue.opacity(0.7))
+private struct CategoryCard: View {
+    let title: String
+    let icon: String
+    let iconColor: Color
+    let count: Int
 
-            VStack(spacing: 6) {
-                Text("No Passwords Yet")
-                    .font(.title3.bold())
-                Text("Tap the + button to add your first password.")
-                    .font(.subheadline)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                // Icon
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(iconColor.gradient)
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                Spacer()
+
+                // Count
+                Text("\(count)")
+                    .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    .padding(.top, 2)
             }
 
-            Button {
-                showAddSheet = true
-            } label: {
-                Label("Add Password", systemImage: "plus")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .frame(maxWidth: 240)
+            Spacer(minLength: 12)
+
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
         }
-        .padding(32)
-        .sheet(isPresented: $showAddSheet) {
-            AddEditPasswordView(userId: userId)
-                .environmentObject(passwordStore)
-        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 100)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
     }
 }

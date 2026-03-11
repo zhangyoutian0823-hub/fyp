@@ -84,29 +84,3 @@ struct AppUser: Identifiable, Codable, Equatable {
     }
 }
 
-// MARK: - 管理员模型
-
-struct AdminUser: Identifiable, Codable, Equatable {
-    var id: String { adminId }
-    let adminId: String
-    var name: String
-    var faceImageFilename: String?
-    var faceEmbedding: [Float]?
-    /// SHA-256 哈希后的密码（注册时必填）
-    var passwordHash: String?
-    var createdAt: Date
-
-    init(adminId: String,
-         name: String,
-         faceImageFilename: String? = nil,
-         faceEmbedding: [Float]? = nil,
-         passwordHash: String? = nil,
-         createdAt: Date = Date()) {
-        self.adminId = adminId
-        self.name = name
-        self.faceImageFilename = faceImageFilename
-        self.faceEmbedding = faceEmbedding
-        self.passwordHash = passwordHash
-        self.createdAt = createdAt
-    }
-}

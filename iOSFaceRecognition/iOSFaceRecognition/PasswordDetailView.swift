@@ -195,14 +195,14 @@ struct PasswordDetailView: View {
         .sheet(isPresented: $showEditSheet) {
             AddEditPasswordView(userId: current.userId, existing: current)
         }
-        .alert("Delete Password?", isPresented: $showDeleteAlert) {
+        .alert("Move to Recently Deleted?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
-                passwordStore.delete(id: current.id)
+                passwordStore.softDelete(id: current.id)
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will permanently delete the password for \"\(current.title)\". This action cannot be undone.")
+            Text("This password will be moved to Recently Deleted and permanently removed after 30 days.")
         }
         // 已复制气泡
         .overlay(alignment: .bottom) {

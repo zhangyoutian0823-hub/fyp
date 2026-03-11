@@ -2,7 +2,7 @@
 //  EntryView.swift
 //  iOSFaceRecognition
 //
-//  App landing screen — hero gradient with branding + action buttons.
+//  App landing screen — FaceVault hero + action buttons.
 //
 
 import SwiftUI
@@ -20,42 +20,57 @@ struct EntryView: View {
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // Hero section
-                    VStack(spacing: 22) {
+
+                    // ── Hero ──
+                    VStack(spacing: 32) {
+
+                        // App icon — vault shield with concentric glow rings
                         ZStack {
-                            Circle()
-                                .fill(.white.opacity(0.05))
-                                .frame(width: 168, height: 168)
-                            Circle()
-                                .fill(.white.opacity(0.09))
-                                .frame(width: 130, height: 130)
-                            Circle()
-                                .fill(.white.opacity(0.15))
-                                .frame(width: 96, height: 96)
-                            Image(systemName: "faceid")
-                                .font(.system(size: 50, weight: .light))
+                            ForEach([220, 172, 132, 100], id: \.self) { size in
+                                Circle()
+                                    .fill(.white.opacity(
+                                        size == 220 ? 0.04
+                                        : size == 172 ? 0.07
+                                        : size == 132 ? 0.11
+                                        : 0.18
+                                    ))
+                                    .frame(width: CGFloat(size), height: CGFloat(size))
+                            }
+                            Image(systemName: "lock.shield.fill")
+                                .font(.system(size: 52, weight: .light))
                                 .foregroundStyle(.white)
                         }
 
-                        VStack(spacing: 8) {
-                            Text("FaceGuard")
-                                .font(.system(size: 38, weight: .bold, design: .rounded))
+                        // App name + tagline
+                        VStack(spacing: 10) {
+                            Text("FaceVault")
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white)
-                            Text("Secure Face Recognition System")
+                            Text("Your passwords,\nprotected by your face.")
                                 .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.60))
+                                .foregroundStyle(.white.opacity(0.72))
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(3)
+                        }
+
+                        // Feature pills
+                        HStack(spacing: 10) {
+                            featurePill(icon: "faceid",      label: "Face Auth")
+                            featurePill(icon: "key.fill",    label: "Secure Vault")
+                            featurePill(icon: "eye.slash",   label: "Private")
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    // Bottom action card
-                    VStack(spacing: 14) {
+                    // ── Bottom action card ──
+                    VStack(spacing: 12) {
 
-                        NavigationLink(destination: RegisterView()) {
+                        // Sign In — primary
+                        NavigationLink(destination: LoginView()) {
                             HStack(spacing: 10) {
-                                Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 17, weight: .semibold))
-                                Text("Create Account")
+                                Image(systemName: "faceid")
+                                    .font(.system(size: 18, weight: .semibold))
+                                Text("Sign In with Face")
                                     .font(.system(size: 17, weight: .semibold))
                             }
                             .frame(maxWidth: .infinity)
@@ -65,53 +80,58 @@ struct EntryView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
 
-                        NavigationLink(destination: LoginView()) {
+                        // Create Account — secondary
+                        NavigationLink(destination: RegisterView()) {
                             HStack(spacing: 10) {
-                                Image(systemName: "faceid")
-                                    .font(.system(size: 17, weight: .semibold))
-                                Text("Sign In")
-                                    .font(.system(size: 17, weight: .semibold))
+                                Image(systemName: "person.badge.plus")
+                                    .font(.system(size: 17, weight: .medium))
+                                Text("Create Account")
+                                    .font(.system(size: 17, weight: .medium))
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(accentColor.opacity(0.10))
+                            .background(accentColor.opacity(0.08))
                             .foregroundStyle(accentColor)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(accentColor.opacity(0.30), lineWidth: 1)
+                                    .stroke(accentColor.opacity(0.22), lineWidth: 1)
                             )
                         }
 
-                        Rectangle()
-                            .fill(Color(uiColor: .separator))
-                            .frame(height: 0.5)
-                            .padding(.vertical, 2)
-
-                        NavigationLink(destination: AdminEntryView()) {
-                            HStack(spacing: 5) {
-                                Image(systemName: "lock.shield")
-                                    .font(.caption)
-                                Text("Admin Portal")
-                                    .font(.subheadline)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2)
-                            }
+                        // Legal note
+                        Text("Face data never leaves your device.")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
-                        }
-                        .padding(.bottom, 6)
+                            .padding(.top, 2)
                     }
                     .padding(.horizontal, 28)
-                    .padding(.top, 30)
-                    .padding(.bottom, 40)
+                    .padding(.top, 28)
+                    .padding(.bottom, 44)
                     .background(
-                        TopRoundedRectangle(radius: 32)
+                        TopRoundedRectangle(radius: 36)
                             .fill(Color(uiColor: .systemBackground))
-                            .shadow(color: .black.opacity(0.22), radius: 24, y: -6)
+                            .shadow(color: .black.opacity(0.20), radius: 28, y: -8)
                     )
                 }
             }
             .navigationBarHidden(true)
         }
+    }
+
+    // MARK: - Feature Pill
+
+    private func featurePill(icon: String, label: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+            Text(label)
+                .font(.caption2.bold())
+        }
+        .foregroundStyle(.white.opacity(0.88))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(.white.opacity(0.14))
+        .clipShape(Capsule())
     }
 }

@@ -10,7 +10,6 @@ import SwiftData
 struct iOSFaceRecognitionApp: App {
     @StateObject private var session       = SessionStore()
     @StateObject private var userStore     = UserStore()
-    @StateObject private var adminStore    = AdminStore()
     @StateObject private var logStore      = LogStore()
     @StateObject private var passwordStore = PasswordStore()
 
@@ -19,7 +18,6 @@ struct iOSFaceRecognitionApp: App {
             RootView()
                 .environmentObject(session)
                 .environmentObject(userStore)
-                .environmentObject(adminStore)
                 .environmentObject(logStore)
                 .environmentObject(passwordStore)
         }

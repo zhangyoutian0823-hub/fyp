@@ -21,8 +21,9 @@ struct AddEditPasswordView: View {
     @State private var password   = ""
     @State private var url        = ""
     @State private var notes      = ""
-    @State private var isFavorite = false
-    @State private var showPassword = false
+    @State private var isFavorite    = false
+    @State private var showPassword  = false
+    @State private var showGenerator = false
 
     private var isEditing: Bool { existing != nil }
     private var canSave: Bool {
@@ -58,6 +59,7 @@ struct AddEditPasswordView: View {
 
                 // ── 密码 ──
                 Section {
+                    // Password input row
                     HStack {
                         Label("Password", systemImage: "key")
                         Spacer()
@@ -70,6 +72,7 @@ struct AddEditPasswordView: View {
                             SecureField("Required", text: $password)
                                 .multilineTextAlignment(.trailing)
                         }
+                        // Toggle visibility
                         Button {
                             showPassword.toggle()
                         } label: {
@@ -77,6 +80,18 @@ struct AddEditPasswordView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
+                        // Open generator
+                        Button {
+                            showGenerator = true
+                        } label: {
+                            Image(systemName: "wand.and.stars")
+                                .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    // Strength meter — shown as soon as user starts typing
+                    if !password.isEmpty {
+                        PasswordStrengthBar(password: password)
                     }
                 } header: {
                     Text("Security")
@@ -123,6 +138,12 @@ struct AddEditPasswordView: View {
                 }
             }
             .onAppear { prefill() }
+            .sheet(isPresented: $showGenerator) {
+                PasswordGeneratorView { generated in
+                    password    = generated
+                    showPassword = true   // reveal so the user can see what was generated
+                }
+            }
         }
     }
 

@@ -21,6 +21,8 @@ struct PasswordEntry: Identifiable, Codable, Equatable {
 
     var createdAt: Date
     var updatedAt: Date
+    /// 软删除时间戳；nil = 正常，非 nil = 已移入"最近删除"
+    var deletedAt: Date?
 
     // MARK: - 便捷初始化
 
@@ -41,6 +43,13 @@ struct PasswordEntry: Identifiable, Codable, Equatable {
         self.isFavorite = isFavorite
         self.createdAt  = Date()
         self.updatedAt  = Date()
+        self.deletedAt  = nil
+    }
+
+    /// 距软删除已过多少天（用于 Recently Deleted 展示）
+    var daysSinceDeleted: Int? {
+        guard let d = deletedAt else { return nil }
+        return Calendar.current.dateComponents([.day], from: d, to: Date()).day
     }
 
     // MARK: - 首字母（列表分组用）

@@ -11,29 +11,19 @@ import Combine
 @MainActor
 final class SessionStore: ObservableObject {
     @Published var currentUserId: String? = nil
-    @Published var isAdmin: Bool = false
 
     /// Timestamp of the last detected user activity (resets on login or any tap).
     @Published private(set) var lastActivityAt: Date = Date()
 
-    var isLoggedIn: Bool      { currentUserId != nil && !isAdmin }
-    var isAdminLoggedIn: Bool { isAdmin }
+    var isLoggedIn: Bool { currentUserId != nil }
 
     func loginUser(userId: String) {
         currentUserId = userId
-        isAdmin = false
-        lastActivityAt = Date()   // reset idle timer on fresh login
-    }
-
-    func loginAdmin(adminId: String) {
-        currentUserId = adminId
-        isAdmin = true
-        lastActivityAt = Date()   // reset idle timer on fresh login
+        lastActivityAt = Date()
     }
 
     func logout() {
         currentUserId = nil
-        isAdmin = false
     }
 
     /// Call on any meaningful user interaction to reset the inactivity timer.
