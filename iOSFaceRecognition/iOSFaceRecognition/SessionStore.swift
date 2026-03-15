@@ -15,15 +15,26 @@ final class SessionStore: ObservableObject {
     /// Timestamp of the last detected user activity (resets on login or any tap).
     @Published private(set) var lastActivityAt: Date = Date()
 
+    /// True when the app was backgrounded long enough to require face re-verification.
+    @Published var isLocked: Bool = false
+
     var isLoggedIn: Bool { currentUserId != nil }
 
     func loginUser(userId: String) {
         currentUserId = userId
         lastActivityAt = Date()
+        isLocked = false
     }
+
+    /// Lock without ending the session — shows LockScreenView instead of the main TabView.
+    func lock() { isLocked = true }
+
+    /// Called by LockScreenView after a successful face verification.
+    func unlock() { isLocked = false }
 
     func logout() {
         currentUserId = nil
+        isLocked = false
     }
 
     /// Call on any meaningful user interaction to reset the inactivity timer.

@@ -38,6 +38,11 @@ struct WelcomeView: View {
                             .padding(.bottom, 2)
                         }
 
+                        // ── iCloud Backup Notice ──
+                        iCloudBackupCard
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+
                         // ── Quick Actions ──
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Account Settings")
@@ -45,7 +50,7 @@ struct WelcomeView: View {
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
                                 .padding(.horizontal, 20)
-                                .padding(.top, 22)
+                                .padding(.top, 18)
                                 .padding(.bottom, 4)
 
                             AppCard {
@@ -133,6 +138,53 @@ struct WelcomeView: View {
                 }
             }
         }
+    }
+
+    // MARK: - iCloud Backup Notice
+
+    private var iCloudBackupCard: some View {
+        Button {
+            UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+        } label: {
+            HStack(spacing: 14) {
+                // Icon — same style as action rows
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.blue)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "externaldrive.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Stored on This Device")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.primary)
+                    Text("Enable iCloud Backup to protect your vault if you switch or lose your phone.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color(uiColor: .systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            // Subtle blue left accent
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Profile Header

@@ -10,12 +10,21 @@ import SwiftUI
 
 struct AllPasswordsView: View {
     @EnvironmentObject var passwordStore: PasswordStore
-    @EnvironmentObject var session: SessionStore
+    @EnvironmentObject var session:       SessionStore
+    @EnvironmentObject var userStore:     UserStore
 
-    @State private var searchText   = ""
-    @State private var showAddSheet = false
+    @State private var searchText    = ""
+    @State private var showAddSheet  = false
+
+    // Quick-copy via swipe
+    @State private var copyTarget:   PasswordEntry? = nil
+    @State private var showCopyAuth: Bool           = false
+    @State private var flashCopied:  UUID?          = nil  // highlights the just-copied row
 
     private var userId: String { session.currentUserId ?? "" }
+
+    /// Current AppUser — needed to initialise FaceAuthSheet.
+    private var currentUser: AppUser? { userStore.findUser(userId: userId) }
 
     // 搜索过滤后的活跃条目
     private var filtered: [PasswordEntry] {
@@ -92,6 +101,16 @@ struct AllPasswordsView: View {
             AddEditPasswordView(userId: userId)
                 .environmentObject(passwordStore)
         }
+        // Face-auth sheet for swipe-to-copy password
+        .sheet(isPresented: $showCopyAuth) {
+            if let entry = copyTarget, let user = currentUser {
+                FaceAuthSheet(user: user) {
+                    UIPasteboard.general.string = entry.password
+                    flash(id: entry.id)
+                    copyTarget = nil
+                }
+            }
+        }
     }
 
     // MARK: - Row
@@ -102,12 +121,25 @@ struct AllPasswordsView: View {
             PasswordDetailView(entry: entry)
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: entry.symbolName)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(Color.blue.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: entry.symbolName)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(Color.blue.gradient)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    // Brief "copied" badge
+                    if flashCopied == entry.id {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .background(Color.green, in: Circle())
+                            .offset(x: 4, y: 4)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(duration: 0.25), value: flashCopied)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title)
@@ -119,6 +151,36 @@ struct AllPasswordsView: View {
                 }
             }
             .padding(.vertical, 2)
+        }
+        // ── Trailing swipe: Copy Password (requires face auth) ──
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                copyTarget   = entry
+                showCopyAuth = true
+            } label: {
+                Label("Copy Password", systemImage: "key.fill")
+            }
+            .tint(.indigo)
+        }
+        // ── Leading swipe: Copy Username (no auth — already visible in the list) ──
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                UIPasteboard.general.string = entry.username
+                flash(id: entry.id)
+            } label: {
+                Label("Copy Username", systemImage: "person.circle.fill")
+            }
+            .tint(.blue)
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Briefly shows the green ✓ badge on the copied row, then clears it.
+    private func flash(id: UUID) {
+        withAnimation { flashCopied = id }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation { if flashCopied == id { flashCopied = nil } }
         }
     }
 
