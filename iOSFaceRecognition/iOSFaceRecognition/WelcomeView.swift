@@ -102,7 +102,7 @@ struct WelcomeView: View {
                             HStack {
                                 Image(systemName: "lock.shield.fill")
                                     .font(.caption2)
-                                Text("FaceVault")
+                                Text("KeyFace")
                                     .font(.caption2.bold())
                             }
                             .foregroundStyle(.tertiary)

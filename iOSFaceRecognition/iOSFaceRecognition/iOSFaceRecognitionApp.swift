@@ -12,6 +12,8 @@ struct iOSFaceRecognitionApp: App {
     @StateObject private var userStore     = UserStore()
     @StateObject private var logStore      = LogStore()
     @StateObject private var passwordStore = PasswordStore()
+    @StateObject private var noteStore     = NoteStore()
+    @StateObject private var wifiStore     = WiFiStore()
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +22,8 @@ struct iOSFaceRecognitionApp: App {
                 .environmentObject(userStore)
                 .environmentObject(logStore)
                 .environmentObject(passwordStore)
+                .environmentObject(noteStore)
+                .environmentObject(wifiStore)
         }
     }
 }

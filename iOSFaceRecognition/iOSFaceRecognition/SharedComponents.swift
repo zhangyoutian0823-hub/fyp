@@ -57,7 +57,7 @@ struct TopRoundedRectangle: Shape {
 // MARK: - App Gradients
 
 extension LinearGradient {
-    /// FaceVault signature gradient — rich blue with subtle indigo depth.
+    /// KeyFace signature gradient — rich blue with subtle indigo depth.
     static var appHeroBlue: LinearGradient {
         LinearGradient(
             colors: [

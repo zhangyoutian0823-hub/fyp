@@ -11,14 +11,14 @@ import CryptoKit
 @MainActor
 final class UserStore: ObservableObject {
     @Published private(set) var users: [AppUser] = []
-    private let key = "users_db_v2"   // v2: new model without password
+    private let key = "users_db_v2"   // v2: stored in Keychain (AES-256 encrypted)
 
     init() { load() }
 
     // MARK: - Query
 
     func load() {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return }
+        guard let data = KeychainHelper.load(account: key) else { return }
         users = (try? JSONDecoder().decode([AppUser].self, from: data)) ?? []
     }
 
@@ -208,14 +208,19 @@ final class UserStore: ObservableObject {
 
     // MARK: - Delete User
 
-    func deleteUser(userId: String, passwordStore: PasswordStore? = nil) {
+    func deleteUser(userId: String,
+                    passwordStore: PasswordStore? = nil,
+                    noteStore: NoteStore? = nil,
+                    wifiStore: WiFiStore? = nil) {
         if let u = findUser(userId: userId), let fn = u.faceImageFilename {
             deleteImage(filename: fn)
         }
         users.removeAll { $0.userId == userId }
         persist()
-        // 同步删除该用户的所有密码条目，防止孤立数据残留
+        // 同步删除该用户的全部数据，防止孤立记录残留
         passwordStore?.deleteAll(for: userId)
+        noteStore?.deleteAll(for: userId)
+        wifiStore?.deleteAll(for: userId)
     }
 
     // MARK: - Image Storage
@@ -266,7 +271,7 @@ final class UserStore: ObservableObject {
 
     private func persist() {
         let data = (try? JSONEncoder().encode(users)) ?? Data()
-        UserDefaults.standard.set(data, forKey: key)
+        KeychainHelper.save(data, account: key)
     }
 }
 

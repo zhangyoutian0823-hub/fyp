@@ -22,10 +22,12 @@ final class LogStore: ObservableObject {
 
     func add(userId: String,
              eventType: AccessEventType,
-             similarityScore: Float? = nil) {
+             similarityScore: Float? = nil,
+             detail: String? = nil) {
         let log = AccessLog(userId: userId,
                             eventType: eventType,
-                            similarityScore: similarityScore)
+                            similarityScore: similarityScore,
+                            detail: detail)
         logs.insert(log, at: 0)   // 最新的在最前
         if logs.count > maxLogs { logs = Array(logs.prefix(maxLogs)) }
         persist()

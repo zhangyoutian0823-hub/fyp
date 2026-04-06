@@ -1,46 +1,44 @@
 //
-//  AllPasswordsView.swift
+//  AllNotesView.swift
 //  iOSFaceRecognition
 //
-//  全部密码列表：收藏置顶 + 按首字母分组，支持搜索。
-//  从 PasswordVaultView 主页点击"All"卡片进入。
+//  加密备忘录列表：收藏置顶 + 按首字母分组，支持搜索。
+//  标题可见；内容前 60 字作为预览（已登录用户可见，完整内容在 NoteDetailView 需要人脸验证）。
 //
 
 import SwiftUI
 
-struct AllPasswordsView: View {
-    @EnvironmentObject var passwordStore: PasswordStore
-    @EnvironmentObject var session:       SessionStore
-    @EnvironmentObject var userStore:     UserStore
+struct AllNotesView: View {
+    @EnvironmentObject var noteStore: NoteStore
+    @EnvironmentObject var session:   SessionStore
+    @EnvironmentObject var userStore: UserStore
 
     @State private var searchText    = ""
     @State private var showAddSheet  = false
 
     // Quick-copy via swipe
-    @State private var copyTarget:   PasswordEntry? = nil
-    @State private var showCopyAuth: Bool           = false
-    @State private var flashCopied:  UUID?          = nil  // highlights the just-copied row
+    @State private var copyTarget:   SecureNote? = nil
+    @State private var showCopyAuth: Bool        = false
+    @State private var flashCopied:  UUID?       = nil
 
     private var userId: String { session.currentUserId ?? "" }
-
-    /// Current AppUser — needed to initialise FaceAuthSheet.
     private var currentUser: AppUser? { userStore.findUser(userId: userId) }
 
     // 搜索过滤后的活跃条目
-    private var filtered: [PasswordEntry] {
-        passwordStore.entries(for: userId, query: searchText)
+    private var filtered: [SecureNote] {
+        noteStore.notes(for: userId, query: searchText)
     }
 
     // 收藏
-    private var favorites: [PasswordEntry] {
+    private var favorites: [SecureNote] {
         filtered.filter { $0.isFavorite }
     }
 
     // 非收藏按首字母分组
-    private var grouped: [(letter: String, entries: [PasswordEntry])] {
+    private var grouped: [(letter: String, notes: [SecureNote])] {
         let nonFav = filtered.filter { !$0.isFavorite }
         let dict   = Dictionary(grouping: nonFav) { $0.firstLetter }
-        return dict.keys.sorted().map { (letter: $0, entries: dict[$0]!) }
+        return dict.keys.sorted().map { (letter: $0, notes: dict[$0]!) }
     }
 
     var body: some View {
@@ -52,14 +50,14 @@ struct AllPasswordsView: View {
                     // ── 收藏夹 ──
                     if !favorites.isEmpty {
                         Section("Favourites") {
-                            ForEach(favorites) { entryRow($0) }
+                            ForEach(favorites) { noteRow($0) }
                         }
                     }
 
                     // ── 按字母分组 ──
                     ForEach(grouped, id: \.letter) { group in
                         Section(group.letter) {
-                            ForEach(group.entries) { entryRow($0) }
+                            ForEach(group.notes) { noteRow($0) }
                         }
                     }
 
@@ -86,7 +84,7 @@ struct AllPasswordsView: View {
                 .listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("All Passwords")
+        .navigationTitle("Secure Notes")
         .searchable(text: $searchText, prompt: "Search")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -98,15 +96,15 @@ struct AllPasswordsView: View {
             }
         }
         .sheet(isPresented: $showAddSheet) {
-            AddEditPasswordView(userId: userId)
-                .environmentObject(passwordStore)
+            AddEditNoteView(userId: userId)
+                .environmentObject(noteStore)
         }
-        // Face-auth sheet for swipe-to-copy password
+        // Face-auth sheet for swipe-to-copy content
         .sheet(isPresented: $showCopyAuth) {
-            if let entry = copyTarget, let user = currentUser {
+            if let note = copyTarget, let user = currentUser {
                 FaceAuthSheet(user: user) {
-                    UIPasteboard.general.string = entry.password
-                    flash(id: entry.id)
+                    UIPasteboard.general.string = note.content
+                    flash(id: note.id)
                     copyTarget = nil
                 }
             }
@@ -116,21 +114,21 @@ struct AllPasswordsView: View {
     // MARK: - Row
 
     @ViewBuilder
-    private func entryRow(_ entry: PasswordEntry) -> some View {
+    private func noteRow(_ note: SecureNote) -> some View {
         NavigationLink {
-            PasswordDetailView(entry: entry)
+            NoteDetailView(note: note)
         } label: {
             HStack(spacing: 14) {
                 ZStack(alignment: .bottomTrailing) {
-                    Image(systemName: entry.symbolName)
+                    Image(systemName: "note.text")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
-                        .background(Color.blue.gradient)
+                        .background(Color.orange.gradient)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                     // Brief "copied" badge
-                    if flashCopied == entry.id {
+                    if flashCopied == note.id {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.white)
@@ -142,40 +140,37 @@ struct AllPasswordsView: View {
                 .animation(.spring(duration: 0.25), value: flashCopied)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.title)
+                    Text(note.title)
                         .font(.body)
-                    Text(entry.username)
+                    Text(notePreview(note.content))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+            .padding(.vertical, 2)
         }
-        // ── Trailing swipe: Copy Password (requires face auth) ──
+        // ── Trailing swipe: Copy Content (requires face auth) ──
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button {
-                copyTarget   = entry
+                copyTarget   = note
                 showCopyAuth = true
             } label: {
-                Label("Copy Password", systemImage: "key.fill")
+                Label("Copy Content", systemImage: "doc.on.doc")
             }
-            .tint(.indigo)
-        }
-        // ── Leading swipe: Copy Username (no auth — already visible in the list) ──
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button {
-                UIPasteboard.general.string = entry.username
-                flash(id: entry.id)
-            } label: {
-                Label("Copy Username", systemImage: "person.circle.fill")
-            }
-            .tint(.blue)
+            .tint(.orange)
         }
     }
 
     // MARK: - Helpers
+
+    /// First 60 characters of content as a safe preview.
+    private func notePreview(_ content: String) -> String {
+        let clean = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty { return "No content" }
+        let limit = clean.index(clean.startIndex, offsetBy: min(60, clean.count))
+        return clean.count > 60 ? String(clean[..<limit]) + "…" : clean
+    }
 
     /// Briefly shows the green ✓ badge on the copied row, then clears it.
     private func flash(id: UUID) {
@@ -189,27 +184,27 @@ struct AllPasswordsView: View {
 
     private var emptyState: some View {
         VStack(spacing: 20) {
-            Image(systemName: "key.fill")
+            Image(systemName: "note.text")
                 .font(.system(size: 56, weight: .light))
-                .foregroundStyle(.blue.opacity(0.7))
+                .foregroundStyle(.orange.opacity(0.7))
             VStack(spacing: 6) {
-                Text("No Passwords Yet")
+                Text("No Secure Notes Yet")
                     .font(.title3.bold())
-                Text("Tap + to add your first password.")
+                Text("Tap + to add your first note.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
             Button { showAddSheet = true } label: {
-                Label("Add Password", systemImage: "plus")
+                Label("Add Note", systemImage: "plus")
             }
             .buttonStyle(PrimaryButtonStyle())
             .frame(maxWidth: 240)
         }
         .padding(32)
         .sheet(isPresented: $showAddSheet) {
-            AddEditPasswordView(userId: userId)
-                .environmentObject(passwordStore)
+            AddEditNoteView(userId: userId)
+                .environmentObject(noteStore)
         }
     }
 }

@@ -15,13 +15,15 @@ struct PasswordDetailView: View {
     @EnvironmentObject var passwordStore: PasswordStore
     @EnvironmentObject var userStore: UserStore
     @EnvironmentObject var session: SessionStore
+    @EnvironmentObject var logStore: LogStore
     @Environment(\.dismiss) private var dismiss
 
     let entry: PasswordEntry
 
-    @State private var showPassword    = false
-    @State private var showFaceAuth    = false
-    @State private var showEditSheet   = false
+    @State private var showPassword       = false
+    @State private var showFaceAuth       = false
+    @State private var showFaceAuthForEdit = false
+    @State private var showEditSheet      = false
     @State private var showDeleteAlert = false
     @State private var hideTimer: Timer?
     @State private var copiedField: String?   // 用于显示"已复制"气泡
@@ -181,7 +183,14 @@ struct PasswordDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { showEditSheet = true }
+                Button("Edit") {
+                    guard let user = currentUser else { return }
+                    if user.faceEmbedding == nil || user.faceEmbedding!.isEmpty {
+                        showEditSheet = true
+                    } else {
+                        showFaceAuthForEdit = true
+                    }
+                }
             }
         }
         .sheet(isPresented: $showFaceAuth) {
@@ -192,12 +201,23 @@ struct PasswordDetailView: View {
                 .presentationDetents([.large])
             }
         }
+        .sheet(isPresented: $showFaceAuthForEdit) {
+            if let user = currentUser {
+                FaceAuthSheet(user: user) {
+                    showEditSheet = true
+                }
+                .presentationDetents([.large])
+            }
+        }
         .sheet(isPresented: $showEditSheet) {
             AddEditPasswordView(userId: current.userId, existing: current)
         }
         .alert("Move to Recently Deleted?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
+                let title = current.title
+                let uid   = current.userId
                 passwordStore.softDelete(id: current.id)
+                logStore.add(userId: uid, eventType: .vaultItemDeleted, detail: title)
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}

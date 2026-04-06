@@ -10,6 +10,7 @@ import SwiftUI
 struct UpdatePasswordView: View {
     @EnvironmentObject var session: SessionStore
     @EnvironmentObject var userStore: UserStore
+    @EnvironmentObject var logStore: LogStore
     @Environment(\.dismiss) var dismiss
 
     @State private var currentPassword: String = ""
@@ -224,6 +225,9 @@ struct UpdatePasswordView: View {
         }
 
         userStore.updatePasswordHash(userId: currentUserId, newHash: newHash)
+        logStore.add(userId: currentUserId,
+                     eventType: .accountPasswordChanged,
+                     detail: "Account login password updated")
 
         currentPassword = ""
         newPassword = ""

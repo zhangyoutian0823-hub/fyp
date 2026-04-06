@@ -9,6 +9,7 @@ import SwiftUI
 
 struct AddEditPasswordView: View {
     @EnvironmentObject var passwordStore: PasswordStore
+    @EnvironmentObject var logStore: LogStore
     @Environment(\.dismiss) private var dismiss
 
     /// 传入 nil = 新增模式；传入现有条目 = 编辑模式
@@ -161,13 +162,24 @@ struct AddEditPasswordView: View {
 
     private func save() {
         if var e = existing {
-            e.title      = title.trimmingCharacters(in: .whitespaces)
-            e.username   = username.trimmingCharacters(in: .whitespaces)
+            let trimTitle    = title.trimmingCharacters(in: .whitespaces)
+            let trimUsername = username.trimmingCharacters(in: .whitespaces)
+            let trimUrl      = url.trimmingCharacters(in: .whitespaces)
+            let hasChanges   = e.title != trimTitle || e.username != trimUsername ||
+                               e.password != password || e.url != trimUrl ||
+                               e.notes != notes || e.isFavorite != isFavorite
+            e.title      = trimTitle
+            e.username   = trimUsername
             e.password   = password
-            e.url        = url.trimmingCharacters(in: .whitespaces)
+            e.url        = trimUrl
             e.notes      = notes
             e.isFavorite = isFavorite
             passwordStore.update(e)
+            if hasChanges {
+                logStore.add(userId: userId,
+                             eventType: .vaultItemEdited,
+                             detail: e.title)
+            }
         } else {
             let entry = PasswordEntry(
                 userId:     userId,

@@ -19,7 +19,24 @@ struct UserActivityView: View {
 
     private var myLogs: [AccessLog] {
         guard let uid = session.currentUserId else { return [] }
-        return Array(logStore.logs(for: uid).prefix(20))
+        return Array(logStore.logs(for: uid)
+            .filter {
+                $0.eventType != .accountPasswordChanged &&
+                $0.eventType != .vaultItemEdited   && $0.eventType != .vaultItemDeleted &&
+                $0.eventType != .wifiItemEdited    && $0.eventType != .wifiItemDeleted  &&
+                $0.eventType != .noteItemEdited    && $0.eventType != .noteItemDeleted
+            }
+            .prefix(20))
+    }
+
+    private var passwordChangeLogs: [AccessLog] {
+        guard let uid = session.currentUserId else { return [] }
+        return logStore.logs(for: uid).filter {
+            $0.eventType == .accountPasswordChanged ||
+            $0.eventType == .vaultItemEdited   || $0.eventType == .vaultItemDeleted ||
+            $0.eventType == .wifiItemEdited    || $0.eventType == .wifiItemDeleted  ||
+            $0.eventType == .noteItemEdited    || $0.eventType == .noteItemDeleted
+        }
     }
 
     var body: some View {
@@ -59,17 +76,58 @@ struct UserActivityView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 8)
 
-                        AppCard {
-                            ForEach(Array(myLogs.enumerated()), id: \.element.id) { idx, log in
-                                VStack(spacing: 0) {
-                                    activityRow(log: log)
-                                    if idx < myLogs.count - 1 {
-                                        Divider().padding(.leading, 60)
+                        // ── Login History ──
+                        if !myLogs.isEmpty {
+                            AppCard {
+                                ForEach(Array(myLogs.enumerated()), id: \.element.id) { idx, log in
+                                    VStack(spacing: 0) {
+                                        activityRow(log: log)
+                                        if idx < myLogs.count - 1 {
+                                            Divider().padding(.leading, 60)
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal, 16)
                         }
-                        .padding(.horizontal, 16)
+
+                        // ── Password Changes ──
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Password Changes")
+                                .font(.footnote.bold())
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 18)
+
+                            if passwordChangeLogs.isEmpty {
+                                AppCard {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "lock.slash")
+                                            .font(.system(size: 22))
+                                            .foregroundStyle(.secondary)
+                                        Text("No password changes recorded")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .padding(.horizontal, 16)
+                            } else {
+                                AppCard {
+                                    ForEach(Array(passwordChangeLogs.enumerated()), id: \.element.id) { idx, log in
+                                        VStack(spacing: 0) {
+                                            passwordChangeRow(log: log)
+                                            if idx < passwordChangeLogs.count - 1 {
+                                                Divider().padding(.leading, 60)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                            }
+                        }
                         .padding(.bottom, 32)
                     }
                 }
@@ -124,6 +182,58 @@ struct UserActivityView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Password Change Row
+
+    private func passwordChangeRow(log: AccessLog) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(changeEventColor(log.eventType).opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: log.eventType.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(changeEventColor(log.eventType))
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(log.detail ?? log.eventType.rawValue)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                HStack(spacing: 6) {
+                    Text(dateFormatter.string(from: log.timestamp))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(log.deviceName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Change Event Color
+
+    private func changeEventColor(_ type: AccessEventType) -> Color {
+        switch type {
+        case .accountPasswordChanged:          return .orange
+        case .vaultItemEdited:                 return .blue
+        case .vaultItemDeleted:                return .red
+        case .wifiItemEdited:                  return .teal
+        case .wifiItemDeleted:                 return .red
+        case .noteItemEdited:                  return .orange
+        case .noteItemDeleted:                 return .red
+        default:                               return .blue
+        }
     }
 
     // MARK: - Summary Badge

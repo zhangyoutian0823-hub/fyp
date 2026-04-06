@@ -2,7 +2,7 @@
 //  EntryView.swift
 //  iOSFaceRecognition
 //
-//  App landing screen — FaceVault hero + action buttons.
+//  App landing screen — KeyFace hero + action buttons.
 //
 
 import SwiftUI
@@ -43,7 +43,7 @@ struct EntryView: View {
 
                         // App name + tagline
                         VStack(spacing: 10) {
-                            Text("FaceVault")
+                            Text("KeyFace")
                                 .font(.system(size: 40, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white)
                             Text("Your passwords,\nprotected by your face.")

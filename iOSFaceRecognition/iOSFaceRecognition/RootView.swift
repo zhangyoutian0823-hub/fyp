@@ -31,13 +31,13 @@ struct RootView: View {
                     LockScreenView()
                 } else {
                     TabView {
+                        PasswordVaultView()
+                            .tabItem {
+                                Label("Vault", systemImage: "key.fill")
+                            }
                         WelcomeView()
                             .tabItem {
                                 Label("Account", systemImage: "person.crop.circle")
-                            }
-                        PasswordVaultView()
-                            .tabItem {
-                                Label("Passwords", systemImage: "key.fill")
                             }
                     }
                 }

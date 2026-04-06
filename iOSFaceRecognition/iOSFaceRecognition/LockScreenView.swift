@@ -55,7 +55,7 @@ struct LockScreenView: View {
                 Spacer().frame(height: 36)
 
                 // ── Title ──
-                Text("FaceVault Locked")
+                Text("KeyFace Locked")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
 
