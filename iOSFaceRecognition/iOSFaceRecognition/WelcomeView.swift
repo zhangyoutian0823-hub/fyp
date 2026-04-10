@@ -67,7 +67,7 @@ struct WelcomeView: View {
                                 Divider().padding(.leading, 56)
                                 NavigationLink(destination: UserActivityView()) {
                                     actionRow(icon: "clock.arrow.circlepath", color: .purple,
-                                              title: "Login History")
+                                              title: "Activity Log")
                                 }
                             }
                             .padding(.horizontal, 16)

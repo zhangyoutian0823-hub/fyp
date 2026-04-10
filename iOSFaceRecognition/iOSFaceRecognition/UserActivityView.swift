@@ -76,7 +76,7 @@ struct UserActivityView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 8)
 
-                        // ── Login History ──
+                        // ── Login Activity ──
                         if !myLogs.isEmpty {
                             AppCard {
                                 ForEach(Array(myLogs.enumerated()), id: \.element.id) { idx, log in
@@ -91,9 +91,9 @@ struct UserActivityView: View {
                             .padding(.horizontal, 16)
                         }
 
-                        // ── Password Changes ──
+                        // ── Vault Changes ──
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Password Changes")
+                            Text("Vault Changes")
                                 .font(.footnote.bold())
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
@@ -106,7 +106,7 @@ struct UserActivityView: View {
                                         Image(systemName: "lock.slash")
                                             .font(.system(size: 22))
                                             .foregroundStyle(.secondary)
-                                        Text("No password changes recorded")
+                                        Text("No vault changes recorded")
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
                                     }
@@ -134,7 +134,7 @@ struct UserActivityView: View {
                 .background(Color(uiColor: .systemGroupedBackground))
             }
         }
-        .navigationTitle("Login History")
+        .navigationTitle("Activity Log")
         .navigationBarTitleDisplayMode(.inline)
     }
 
